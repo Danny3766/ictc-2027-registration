@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "test:e2e": "playwright test"
+    "test:e2e": "node scripts/test-e2e.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"

@@ -17,7 +17,6 @@ declare
   v_serial_no bigint;
   v_published_count integer;
   v_answered_count integer;
-  v_attending_count integer;
 begin
   if not exists (
     select 1 from public.site_settings
@@ -44,8 +43,7 @@ begin
   select count(*) into v_published_count
   from public.activities where is_published;
 
-  select count(*), count(*) filter (where attending)
-  into v_answered_count, v_attending_count
+  select count(*) into v_answered_count
   from (
     select distinct (choice->>'activity_id')::bigint as activity_id,
       (choice->>'attending')::boolean as attending
@@ -57,8 +55,7 @@ begin
 
   if v_published_count = 0
     or jsonb_array_length(p_choices) <> v_published_count
-    or v_answered_count <> v_published_count
-    or v_attending_count = 0 then
+    or v_answered_count <> v_published_count then
     raise exception using errcode = '22023', message = 'INVALID_CHOICES';
   end if;
 
@@ -147,7 +144,6 @@ declare
   v_registration public.registrations%rowtype;
   v_published_count integer;
   v_answered_count integer;
-  v_attending_count integer;
 begin
   if not exists (
     select 1 from public.site_settings
@@ -174,8 +170,7 @@ begin
   end if;
 
   select count(*) into v_published_count from public.activities where is_published;
-  select count(*), count(*) filter (where attending)
-  into v_answered_count, v_attending_count
+  select count(*) into v_answered_count
   from (
     select distinct (choice->>'activity_id')::bigint as activity_id,
       (choice->>'attending')::boolean as attending
@@ -187,8 +182,7 @@ begin
 
   if v_published_count = 0
     or jsonb_array_length(p_choices) <> v_published_count
-    or v_answered_count <> v_published_count
-    or v_attending_count = 0 then
+    or v_answered_count <> v_published_count then
     raise exception using errcode = '22023', message = 'INVALID_CHOICES';
   end if;
 
@@ -248,12 +242,6 @@ begin
   for update;
 
   if not found then return false; end if;
-  if p_status = 'active' and not exists (
-    select 1 from public.registration_choices
-    where registration_id = v_registration.id and attending
-  ) then
-    raise exception using errcode = '22023', message = 'INVALID_CHOICES';
-  end if;
   if p_status = 'active' and exists (
     select 1 from public.activities activity
     where activity.is_published and not exists (

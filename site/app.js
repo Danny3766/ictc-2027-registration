@@ -3,9 +3,34 @@ const message = document.querySelector("#page-message");
 const registrationForm = document.querySelector("#registration-form");
 const queryForm = document.querySelector("#query-form");
 const editForm = document.querySelector("#edit-form");
+const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
 const startedAt = Date.now();
 let pageData;
 let activeQueryCode = "";
+
+if (config?.environment === "test") document.querySelector("#test-banner").hidden = false;
+
+function selectTab(tab) {
+  for (const item of tabs) {
+    const selected = item === tab;
+    item.setAttribute("aria-selected", String(selected));
+    item.tabIndex = selected ? 0 : -1;
+    document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
+  }
+}
+
+for (const tab of tabs) {
+  tab.addEventListener("click", () => selectTab(tab));
+  tab.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? tabs[0]
+      : event.key === "End" ? tabs.at(-1)
+      : tabs[(tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
+    selectTab(next);
+    next.focus();
+  });
+}
 
 function showMessage(text, error = false) {
   message.textContent = text;
@@ -31,6 +56,9 @@ function activityFields(activities, values = new Map()) {
     const selected = values.get(activity.id);
     return `<div class="activity">
       <strong>${escapeHtml(activity.title)}</strong>
+      ${activity.venue ? `<p class="hint">地點：${escapeHtml(activity.venue)}</p>` : ""}
+      ${activity.address ? `<p class="hint">地址：${escapeHtml(activity.address)}</p>` : ""}
+      ${activity.fee_amount != null ? `<p class="hint">規劃費用：NT$${escapeHtml(activity.fee_amount)}／人</p>` : ""}
       ${activity.description ? `<p class="hint">${escapeHtml(activity.description)}</p>` : ""}
       <div class="activity-options">
         <label><input type="radio" name="activity_${activity.id}" value="true" ${selected === true ? "checked" : ""} required>參加</label>
@@ -86,7 +114,6 @@ function choicesFrom(form) {
     if (value === null) throw new Error("請回答每一項活動");
     return { activity_id: activity.id, attending: value === "true" };
   });
-  if (!choices.some((choice) => choice.attending)) throw new Error("請至少選擇參加一項活動");
   return choices;
 }
 
@@ -143,7 +170,6 @@ queryForm.addEventListener("submit", async (event) => {
   try {
     activeQueryCode = new FormData(queryForm).get("query_code").toLowerCase().replaceAll(/\s/g, "");
     const registration = await api({ action: "query", query_code: activeQueryCode });
-    document.querySelector("#serial-no").textContent = registration.serial_no;
     editForm.elements.full_name.value = registration.full_name;
     editForm.elements.district_id.innerHTML = districtOptions(registration.district_id);
     const values = new Map(registration.choices.map((choice) => [choice.activity_id, choice.attending]));

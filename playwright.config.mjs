@@ -9,8 +9,8 @@ export default defineConfig({
     { name: "mobile-chrome", use: { ...devices["Pixel 7"] } },
     { name: "mobile-safari", use: { ...devices["iPhone 13"] } },
   ],
-  webServer: {
-    command: "python -m http.server 8765 --bind 127.0.0.1 --directory site",
+  webServer: process.platform === "win32" ? undefined : {
+    command: "node scripts/serve-site.mjs",
     url: "http://127.0.0.1:8765/",
     reuseExistingServer: true,
   },

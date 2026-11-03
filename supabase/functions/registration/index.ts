@@ -14,10 +14,14 @@ export function normalizeCode(value) {
   return typeof value === "string" ? value.toLowerCase().replaceAll(/\s/g, "") : "";
 }
 
+export function isValidCode(code) {
+  return new RegExp(`^[${alphabet}]{8}$`).test(code);
+}
+
 export function randomCode() {
   const result = [];
   const limit = Math.floor(256 / alphabet.length) * alphabet.length;
-  while (result.length < 5) {
+  while (result.length < 8) {
     const [byte] = crypto.getRandomValues(new Uint8Array(1));
     if (byte < limit) result.push(alphabet[byte % alphabet.length]);
   }
@@ -34,10 +38,6 @@ export async function hashCode(code, pepper) {
   );
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(code));
   return Array.from(new Uint8Array(signature), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-export function serialNumber(value) {
-  return `38-${String(value).padStart(4, "0")}`;
 }
 
 export function isUuid(value) {
@@ -122,7 +122,7 @@ export async function handler(request) {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const code = randomCode();
       const codeHash = await hashCode(code, pepper);
-      const { data, error } = await database.rpc("create_registration", {
+      const { error } = await database.rpc("create_registration", {
         p_request_id: body.create_request_id,
         p_full_name: body.full_name,
         p_district_id: body.district_id,
@@ -130,11 +130,11 @@ export async function handler(request) {
         p_choices: body.choices,
       });
       if (!error) {
-        const registration = data?.[0];
-        return response({ serial_no: serialNumber(registration.serial_no), query_code: code }, 201);
+        return response({ query_code: code }, 201);
       }
       if (error.message.includes("DUPLICATE_REQUEST")) return response({ error: "DUPLICATE_REQUEST" }, 409);
       if (error.code !== "23505") {
+        if (error.message.includes("CREATE_RATE_LIMITED")) return response({ error: "登記暫時忙碌，請稍後再試" }, 429);
         if (error.message.includes("REGISTRATION_CLOSED")) return response({ error: "登記目前未開放" }, 409);
         if (error.code === "22023") return response({ error: "請檢查登記資料" }, 400);
         console.error(error.message);
@@ -155,7 +155,7 @@ export async function handler(request) {
   }
 
   const code = normalizeCode(body.query_code);
-  if (!new RegExp(`^[${alphabet}]{5}$`).test(code)) {
+  if (!isValidCode(code)) {
     if (!await recordQueryResult(database, false)) {
       return response({ error: "服務暫時無法使用" }, 503);
     }
@@ -171,7 +171,8 @@ export async function handler(request) {
     }
     if (!found) return response({ error: "無法查詢登記資料，請確認查詢碼後再試一次" }, 404);
     const registration = data[0];
-    return response({ ...registration, serial_no: serialNumber(registration.serial_no) });
+    const { serial_no: _serialNo, ...publicRegistration } = registration;
+    return response(publicRegistration);
   }
 
   const rpc = action === "update" ? "update_registration" : "set_registration_status";

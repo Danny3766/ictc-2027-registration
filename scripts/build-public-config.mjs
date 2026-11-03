@@ -6,4 +6,4 @@ if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(supabaseUrl ?? "") || !/^sb_pub
   throw new Error("缺少有效的 GitHub Pages 公開 Supabase 設定");
 }
 
-writeFileSync("site/config.js", `window.APP_CONFIG = ${JSON.stringify({ supabaseUrl, publishableKey })};\n`);
+writeFileSync("site/config.js", `window.APP_CONFIG = ${JSON.stringify({ supabaseUrl, publishableKey, environment: process.env.SITE_ENVIRONMENT })};\n`);
