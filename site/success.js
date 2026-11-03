@@ -15,7 +15,7 @@ if (!data?.query_code) {
 document.querySelector("#copy-button").addEventListener("click", async () => {
   const copyMessage = document.querySelector("#copy-message");
   try {
-    await navigator.clipboard.writeText(`查詢碼：${data.query_code}`);
+    await navigator.clipboard.writeText(data.query_code);
     document.querySelector("#copy-button").textContent = "已複製查詢碼";
     copyMessage.textContent = "請貼到您會保存的地方，再勾選下方確認。";
   } catch {
