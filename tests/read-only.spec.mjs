@@ -177,6 +177,12 @@ test("registration tabs and success page show only the query code", async ({ pag
     submittedChoices = route.request().postDataJSON().choices;
     return route.fulfill({ status: 201, json: { query_code: "a2b3c4d5" } });
   });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (text) => { window.copiedQueryCode = text; } },
+    });
+  });
 
   await page.goto("/");
   await expect(page.getByRole("tab", { name: "登記參加" })).toHaveAttribute("aria-selected", "true");
@@ -203,5 +209,7 @@ test("registration tabs and success page show only the query code", async ({ pag
   await expect(page.getByText("流水號")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "複製查詢碼" })).toBeVisible();
   await expect(page.getByRole("button", { name: /列印|儲存/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "複製查詢碼" }).click();
+  await expect.poll(() => page.evaluate(() => window.copiedQueryCode)).toBe("a2b3c4d5");
   await page.locator("#saved-confirmation").check();
 });
