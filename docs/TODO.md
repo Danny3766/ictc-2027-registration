@@ -14,6 +14,7 @@
 - 尚待驗證安全重設查詢碼、跨瀏覽器、可重建的正式環境、實際 Safari、備份及回復；這些仍是公開前關卡。
 - 資料庫與 Edge Function 可以依可用工具套用；保留可重建、可核對的部署步驟。
 - 測試專案已開放三項用餐及主日晚間愛筵；資料庫已驗證全部不參加仍可建立、修改、取消及恢復，Edge Function 實際回傳過 HTTP 429。
+- 住家開發環境已切換至 Node.js 26.13.0 LTS 與 npm 11.20.0；此版本包含 2026-10-21 security release 的漏洞修補，`npm audit` 為 0 vulnerabilities。
 
 ## 下次續作：先完成填寫者與測試站
 
@@ -30,7 +31,7 @@
 - [x] Q42：11/5 前凍結功能範圍，只接受 bug、安全與文字內容修正。
 - [x] Q43：建立規劃檔中的全部活動，未確認項目保持未公開。
 - [x] 測試環境套用活動資訊 migration 後，執行 `supabase/testing/enable-activity-preview.sql`，開放登記並顯示三項用餐與主日晚間愛筵；正式環境維持預設關閉。
-- [ ] 確認開發環境使用仍受支援的 Node.js LTS，再建立最小 `package.json`。
+- [x] 確認開發環境使用仍受支援且已修補的 Node.js 26.13.0 LTS，並在最小 `package.json` 限定支援版本。
 - [x] 從 `feat/ver-001` 建立新的功能分支，不直接在 `feat/ver-001` 開發。
 - [x] 依 Supabase 建置 wizard，從頭建立開發專案並驗證連線。
 - [x] 建立最小網站、migration、RLS、Edge Function 與 Playwright 骨架。
@@ -82,12 +83,12 @@ main（正式環境，由 GitHub Pages 部署）
 
 Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js server。
 
-- [ ] 使用仍受支援且已修補的 Node.js LTS。
+- [x] 使用仍受支援且已修補的 Node.js LTS。
 - [ ] 只安裝必要開發工具；公司主機無法使用 Supabase CLI 時改用 Dashboard 部署。
-- [ ] 套件使用精確版本，不使用 `^` 或 `~` 自動升級。
-- [ ] 提交 `package-lock.json`，後續使用 `npm ci`。
-- [ ] 執行 `npm audit` 並檢查直接與間接相依套件。
-- [ ] 本機靜態伺服器只綁定 `127.0.0.1`。
+- [x] 套件使用精確版本，不使用 `^` 或 `~` 自動升級。
+- [x] 提交 `package-lock.json`，後續使用 `npm ci`。
+- [x] 執行 `npm audit` 並檢查直接與間接相依套件。
+- [x] 本機靜態伺服器只綁定 `127.0.0.1`。
 - [ ] 瀏覽器使用的 Supabase library 固定明確版本。
 
 ## 11/5 上線範圍
