@@ -7,8 +7,7 @@
 
 - [x] Q42：11/5 前凍結功能範圍，只接受 bug、安全與文字內容修正。
 - [x] Q43：建立規劃檔中的全部活動，未確認項目保持未公開。
-- [ ] 更新開發環境的 Node.js。現有 `v20.19.4` 已 EOL，不使用於本專案；改用已修補的 Node 24 LTS。
-- [ ] 確認 `node --version`、`npm --version`，再建立最小 `package.json`。
+- [ ] 確認開發環境使用仍受支援的 Node.js LTS，再建立最小 `package.json`。
 - [ ] 從 `feat/ver-001` 建立新的功能分支，不直接在 `feat/ver-001` 開發。
 - [ ] 依 Supabase 建置 wizard，從頭建立開發專案並驗證連線。
 - [ ] 建立最小網站、migration、RLS、Edge Function 與 Playwright 骨架。
@@ -57,7 +56,7 @@ main（正式環境，由 GitHub Pages 部署）
 
 Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js server。
 
-- [ ] 使用仍受支援且已包含 2026-10 安全修補的 Node 24 LTS。
+- [ ] 使用仍受支援且已修補的 Node.js LTS。
 - [ ] 只安裝必要工具：Playwright、靜態伺服器及 Supabase CLI。
 - [ ] 套件使用精確版本，不使用 `^` 或 `~` 自動升級。
 - [ ] 提交 `package-lock.json`，後續使用 `npm ci`。
