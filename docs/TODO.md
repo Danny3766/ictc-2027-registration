@@ -3,14 +3,25 @@
 > 更新日期：2026-11-03  
 > 目標：11/5 完成正式環境驗收後公開；核心流程或資料安全驗收未通過則延後。
 
+## 開發環境進度（2026-11-03）
+
+- 已完成公開登記的建立、查詢、修改、取消、恢復與截止後禁止寫入驗證；唯讀畫面及台灣時間表有 Playwright 檢查。
+- 已驗證匿名角色無法直接讀取敏感資料表，並實際觸發、解除全站查詢鎖定；測試資料已清除，手動登記保留，開發環境入口已關閉。
+- 查詢鎖定 RPC 修正仍在工作樹；安全驗收請求只保存在本機，不隨公開 repo 發布。
+- 維護指令已有不連線的重設測試：確認只傳雜湊、查詢碼只輸出一次；仍須在受控測試登記上驗證遠端重設、舊碼失效與 audit。
+- Playwright 的唯讀與時間表測試已在 Desktop Chromium、Desktop WebKit、Mobile Chrome、Mobile Safari 模擬通過；其餘核心流程仍須跨瀏覽器驗證，實際 Safari 仍須人工驗收。
+- 已準備只打包 `site/` 的 GitHub Pages 部署工作流程；發布前仍須確認公開設定、來源與部署結果。
+- 尚待驗證安全重設查詢碼、跨瀏覽器、可重建的正式環境、實際 Safari、備份及回復；這些仍是公開前關卡。
+- 資料庫與 Edge Function 可以依可用工具套用；保留可重建、可核對的部署步驟。
+
 ## 現在先做
 
 - [x] Q42：11/5 前凍結功能範圍，只接受 bug、安全與文字內容修正。
 - [x] Q43：建立規劃檔中的全部活動，未確認項目保持未公開。
 - [ ] 確認開發環境使用仍受支援的 Node.js LTS，再建立最小 `package.json`。
-- [ ] 從 `feat/ver-001` 建立新的功能分支，不直接在 `feat/ver-001` 開發。
-- [ ] 依 Supabase 建置 wizard，從頭建立開發專案並驗證連線。
-- [ ] 建立最小網站、migration、RLS、Edge Function 與 Playwright 骨架。
+- [x] 從 `feat/ver-001` 建立新的功能分支，不直接在 `feat/ver-001` 開發。
+- [x] 依 Supabase 建置 wizard，從頭建立開發專案並驗證連線。
+- [x] 建立最小網站、migration、RLS、Edge Function 與 Playwright 骨架。
 
 ## 分支與部署流程
 
@@ -41,7 +52,7 @@ main（正式環境，由 GitHub Pages 部署）
 - [ ] 取得 project URL、publishable／anon key 與 project reference。
 - [ ] 將公開設定寫入 Git 忽略的本機設定檔。
 - [ ] secret 與資料庫密碼不得寫入 repo、前端設定或對話紀錄。
-- [ ] 連接 Supabase CLI。
+- [ ] 驗證資料庫及 Edge Function 的可重建部署方式。
 - [ ] 套用 migration、RLS、seed 與 Edge Functions。
 - [ ] 驗證靜態頁面能連接開發專案。
 
@@ -50,6 +61,9 @@ main（正式環境，由 GitHub Pages 部署）
 - [ ] 11/5 公開前建立獨立的正式專案。
 - [ ] 使用相同 migration 與 seed 重建，不在 Dashboard 人工重做 schema。
 - [ ] 設定 GitHub Pages 所需的公開設定與 Edge Function secrets。
+- [ ] 以 GitHub repository variables 提供各環境的公開連線設定；不將實際值或任何 secret 放入 repo。
+- [ ] 將 Pages Source 設為 GitHub Actions，驗證測試版的公開網址與資料連線。
+- [ ] 正式上線前確認 Pages 的最後部署來源與正式環境連線設定。
 - [ ] 11/5 公開前部署正式環境並完成驗收。
 
 ## Node.js 與 npm 安全原則
@@ -68,6 +82,7 @@ Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js se
 
 ### 公開流程
 
+- [ ] 全站採 RWD；桌機、筆電、平板、手機均可閱讀時間表並操作登記與查詢，不產生水平溢出。
 - [ ] 公開登記頁：姓名、區與當下所有公開活動。
 - [ ] 每個公開活動都須明確選擇參加或不參加，且至少參加一項。
 - [ ] 完成頁顯示流水號與一次性查詢碼，提供複製及列印。
@@ -121,8 +136,16 @@ Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js se
 
 ## 測試與驗收
 
+### CI/CD 與測試站
+
+- [ ] GitHub Actions 的 Pages 部署只打包 `site/`，不包含 migration、測試、`node_modules` 或本機設定；部署工作流程不得輸出 secret。
+- [ ] 測試版連開發 Supabase；正式版連獨立正式 Supabase。兩組 repository variables 分開設定並在部署後檢查。
+- [ ] 每次準備發布時先執行本機測試與機敏資料審查；目前完整 CI 可延後，但 Pages 部署失敗不得當成發布成功。
+- [ ] 測試人員在 Pages 驗證後，關閉開發環境入口並清理該次測試資料；正式環境公開仍以 11/5 驗收關卡為準。
+
 ### 11/5 公開前
 
+- [ ] 以桌機、筆電、平板、手機寬度驗證 RWD 版面與主要操作；實際裝置驗收另列於正式環境關卡。
 - [ ] 資料庫 migration 可重跑。
 - [ ] RLS 允許與拒絕案例通過。
 - [ ] Playwright 覆蓋建立、查詢、修改、取消、恢復、錯誤查詢碼與截止規則。

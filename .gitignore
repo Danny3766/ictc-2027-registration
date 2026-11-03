@@ -46,3 +46,7 @@ site/config.js
 supabase/.temp/
 playwright-report/
 test-results/
+
+# Local-only acceptance checks with replayable requests
+tests/*.manual.spec.mjs
+tests/rls.spec.mjs

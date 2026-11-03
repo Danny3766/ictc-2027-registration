@@ -1,58 +1,94 @@
 <!doctype html>
 <html lang="zh-Hant">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>2027 國際華語相調特會｜38 會所登記</title>
-  <link rel="stylesheet" href="./styles.css">
-  <script src="./config.js"></script>
-  <script src="./app.js" defer></script>
-</head>
-<body>
-  <main class="container">
-    <header class="hero">
-      <p class="eyebrow">38 會所本地調查</p>
-      <h1 id="event-name">2027 國際華語相調特會</h1>
-      <p class="notice">填寫本地調查不代表已完成大會正式報名。</p>
-      <p id="event-meta"></p>
-    </header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>2027 國際華語相調特會｜38 會所登記</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./config.js"></script>
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <main class="container">
+      <header class="hero">
+        <p class="eyebrow">38 會所聖徒登記報名</p>
+        <h1 id="event-name">2027 國際華語相調特會</h1>
+        <p id="event-meta"></p>
+      </header>
 
-    <p id="page-message" class="message" role="status" hidden></p>
+      <p id="page-message" class="message" role="status" hidden></p>
 
-    <section class="card" aria-labelledby="register-title">
-      <h2 id="register-title">登記參加</h2>
-      <form id="registration-form">
-        <label>姓名<input name="full_name" maxlength="100" autocomplete="name" required></label>
-        <label>區<select name="district_id" required><option value="">請選擇</option></select></label>
-        <fieldset>
-          <legend>活動選擇</legend>
-          <p class="hint">每項都要選擇，且至少參加一項。</p>
-          <div id="activities"></div>
-        </fieldset>
-        <label class="honeypot" aria-hidden="true">網站<input name="website" tabindex="-1" autocomplete="off"></label>
-        <button type="submit">送出登記</button>
-      </form>
-    </section>
+      <section
+        class="card"
+        id="program-section"
+        aria-labelledby="program-title"
+        hidden
+      >
+        <h2 id="program-title">聚會時間表</h2>
+        <div id="program" class="program-calendar"></div>
+      </section>
 
-    <section class="card" aria-labelledby="query-title">
-      <h2 id="query-title">查詢或修改登記</h2>
-      <form id="query-form" class="query-row">
-        <label>5 字元查詢碼<input name="query_code" minlength="5" maxlength="20" autocapitalize="none" autocomplete="off" required></label>
-        <button type="submit">查詢</button>
-      </form>
-      <form id="edit-form" hidden>
-        <p>流水號：<strong id="serial-no"></strong></p>
-        <label>姓名<input name="full_name" maxlength="100" required></label>
-        <label>區<select name="district_id" required></select></label>
-        <fieldset><legend>活動選擇</legend><div id="edit-activities"></div></fieldset>
-        <div class="actions">
-          <button type="submit">儲存修改</button>
-          <button type="button" id="cancel-button" class="secondary">取消登記</button>
-          <button type="button" id="restore-button" class="secondary">恢復登記</button>
-        </div>
-      </form>
-    </section>
-  </main>
-</body>
+      <section class="card" aria-labelledby="register-title">
+        <h2 id="register-title">登記參加</h2>
+        <form id="registration-form">
+          <label
+            >姓名<input
+              name="full_name"
+              maxlength="100"
+              autocomplete="name"
+              required
+          /></label>
+          <label
+            >區<select name="district_id" required>
+              <option value="">請選擇</option>
+            </select></label
+          >
+          <fieldset>
+            <legend>活動選擇</legend>
+            <p class="hint">每項都要選擇，且至少參加一項。</p>
+            <div id="activities"></div>
+          </fieldset>
+          <label class="honeypot" aria-hidden="true"
+            >網站<input name="website" tabindex="-1" autocomplete="off"
+          /></label>
+          <button type="submit">送出登記</button>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="query-title">
+        <h2 id="query-title">查詢或修改登記</h2>
+        <form id="query-form" class="query-row">
+          <label
+            >5 字元查詢碼<input
+              name="query_code"
+              minlength="5"
+              maxlength="20"
+              autocapitalize="none"
+              autocomplete="off"
+              required
+          /></label>
+          <button type="submit">查詢</button>
+        </form>
+        <form id="edit-form" hidden>
+          <p>流水號：<strong id="serial-no"></strong></p>
+          <label>姓名<input name="full_name" maxlength="100" required /></label>
+          <label>區<select name="district_id" required></select></label>
+          <fieldset>
+            <legend>活動選擇</legend>
+            <div id="edit-activities"></div>
+          </fieldset>
+          <div class="actions">
+            <button type="submit">儲存修改</button>
+            <button type="button" id="cancel-button" class="secondary">
+              取消登記
+            </button>
+            <button type="button" id="restore-button" class="secondary">
+              恢復登記
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </body>
 </html>

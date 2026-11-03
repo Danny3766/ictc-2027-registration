@@ -46,6 +46,33 @@ function escapeHtml(value) {
   return element.innerHTML;
 }
 
+function showProgram(program) {
+  const section = document.querySelector("#program-section");
+  section.hidden = program.length === 0;
+  const days = new Map();
+  for (const item of program) {
+    if (!days.has(item.event_date)) days.set(item.event_date, []);
+    days.get(item.event_date).push(item);
+  }
+  document.querySelector("#program").innerHTML = Array.from(days, ([date, items]) => {
+    const day = new Intl.DateTimeFormat("zh-TW", {
+      timeZone: "Asia/Taipei", month: "long", day: "numeric", weekday: "long",
+    }).format(new Date(`${date}T00:00:00+08:00`));
+    return `<section class="program-day" aria-label="${escapeHtml(day)}">
+      <h3>${escapeHtml(day)}</h3>
+      <div class="program-slots">${items.map((item) => {
+        const start = item.start_time?.slice(0, 5);
+        const end = item.end_time?.slice(0, 5);
+        const time = start ? `${start}${end ? `–${end}` : ""}` : "時間待定";
+        return `<div class="program-slot">
+          <time>${escapeHtml(time)}</time>
+          <div><strong>${escapeHtml(item.title)}</strong>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}</div>
+        </div>`;
+      }).join("")}</div>
+    </section>`;
+  }).join("");
+}
+
 function districtOptions(selected = "") {
   return `<option value="">請選擇</option>${pageData.districts.map((district) =>
     `<option value="${district.id}" ${String(district.id) === String(selected) ? "selected" : ""}>${escapeHtml(district.name)}</option>`
@@ -72,6 +99,7 @@ async function loadPage() {
     pageData = await api();
     document.querySelector("#event-name").textContent = pageData.settings.event_name;
     document.querySelector("#event-meta").textContent = [pageData.settings.venue, pageData.settings.address].filter(Boolean).join("｜");
+    showProgram(pageData.program);
     registrationForm.elements.district_id.innerHTML = districtOptions();
     document.querySelector("#activities").innerHTML = activityFields(pageData.activities);
     if (!pageData.settings.is_registration_open || pageData.activities.length === 0) {

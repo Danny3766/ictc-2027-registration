@@ -57,6 +57,13 @@ function response(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: corsHeaders });
 }
 
+async function recordQueryResult(database, success) {
+  const { error } = await database.rpc("record_query_result", { p_success: success });
+  if (!error) return true;
+  console.error("Failed to record query result", error);
+  return false;
+}
+
 export async function handler(request) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (!['GET', 'POST'].includes(request.method)) return response({ error: "METHOD_NOT_ALLOWED" }, 405);
@@ -142,11 +149,16 @@ export async function handler(request) {
   }
 
   const { data: available, error: availabilityError } = await database.rpc("check_query_availability");
-  if (availabilityError || !available) return response({ error: "查詢功能暫時停止，請稍後再試" }, 503);
+  if (availabilityError || !available) {
+    if (availabilityError) console.error("Failed to check query availability", availabilityError);
+    return response({ error: "查詢功能暫時停止，請稍後再試" }, 503);
+  }
 
   const code = normalizeCode(body.query_code);
   if (!new RegExp(`^[${alphabet}]{5}$`).test(code)) {
-    await database.rpc("record_query_result", { p_success: false });
+    if (!await recordQueryResult(database, false)) {
+      return response({ error: "服務暫時無法使用" }, 503);
+    }
     return response({ error: "無法查詢登記資料，請確認查詢碼後再試一次" }, 404);
   }
   const codeHash = await hashCode(code, pepper);
@@ -154,7 +166,9 @@ export async function handler(request) {
   if (action === "query") {
     const { data, error } = await database.rpc("get_registration", { p_query_code_hash: codeHash });
     const found = !error && data?.length === 1;
-    await database.rpc("record_query_result", { p_success: found });
+    if (!await recordQueryResult(database, found)) {
+      return response({ error: "服務暫時無法使用" }, 503);
+    }
     if (!found) return response({ error: "無法查詢登記資料，請確認查詢碼後再試一次" }, 404);
     const registration = data[0];
     return response({ ...registration, serial_no: serialNumber(registration.serial_no) });
@@ -172,7 +186,9 @@ export async function handler(request) {
   const { data, error } = await database.rpc(rpc, parameters);
   const found = !error && data === true;
   if (!error || !error.message.includes("REGISTRATION_CLOSED")) {
-    await database.rpc("record_query_result", { p_success: found });
+    if (!await recordQueryResult(database, found)) {
+      return response({ error: "服務暫時無法使用" }, 503);
+    }
   }
   if (error?.message.includes("REGISTRATION_CLOSED")) return response({ error: "登記已截止，資料只能查看" }, 409);
   if (error?.code === "22023") return response({ error: "請檢查登記資料" }, 400);

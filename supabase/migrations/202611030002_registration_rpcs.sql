@@ -305,13 +305,15 @@ begin
 
   if v_state.window_started_at < v_now - interval '10 minutes' then
     update public.query_attempts
-    set window_started_at = v_now, failed_count = 1;
+    set window_started_at = v_now, failed_count = 1
+    where id = true;
     return true;
   end if;
 
   update public.query_attempts
   set failed_count = failed_count + 1,
-      suspended_at = case when failed_count + 1 >= 30 then v_now else null end;
+      suspended_at = case when failed_count + 1 >= 30 then v_now else null end
+  where id = true;
 
   return v_state.failed_count + 1 < 30;
 end;

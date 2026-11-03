@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+test.skip(process.env.RUN_LIVE_REGISTRATION_TEST !== "1", "Creates a remote registration; run only with test-data cleanup ready.");
+
 test("建立、查詢、修改、取消與恢復登記", async ({ page }) => {
   const name = `自動測試 ${Date.now()}`;
   await page.goto("/");
