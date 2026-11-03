@@ -18,7 +18,7 @@
 
 ## 下次續作：先完成填寫者與測試站
 
-- [ ] 將目前功能分支推到 GitHub，確認 Pages workflow 成功、artifact 只有 `site/`，測試網址使用 `DEV_SUPABASE_URL`／`DEV_SUPABASE_PUBLISHABLE_KEY` 並顯示測試站提示。
+- [ ] 將完成功能合併至 `feat/ver-001`，確認 Pages workflow 成功、artifact 只有 `site/`，測試網址使用 `DEV_SUPABASE_URL`／`DEV_SUPABASE_PUBLISHABLE_KEY` 並顯示測試站提示。
 - [ ] 在本機 `127.0.0.1:8765` 與測試版 Pages 檢查填寫畫面：三項用餐、主日晚間愛筵、登記／查詢頁簽、8 碼查詢碼及完成頁複製提醒；確認 Windows Playwright 執行後正常退出。
 - [ ] 實作 Cloudflare Turnstile：填寫頁取得 token，Edge Function 呼叫 Siteverify 驗證；測試與正式環境分開設定 sitekey／secret，secret 只放在 Supabase，並驗證無效、過期及重複使用的 token 會被拒絕。
 - [ ] Turnstile 完成後，以新 migration 更新建立登記防護設定，重新驗收一般流程與防濫用行為；維持不保存 IP 或 IP 雜湊。
