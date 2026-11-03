@@ -13,21 +13,23 @@ const files = new Map([
 ]);
 const types = { html: "text/html", css: "text/css", js: "text/javascript" };
 
-const server = createServer(async (request, response) => {
-  const name = files.get(new URL(request.url, "http://127.0.0.1").pathname);
-  if (!name) {
-    response.writeHead(404).end();
-    return;
-  }
-  try {
-    const body = await readFile(new URL(`../site/${name}`, import.meta.url));
-    response.writeHead(200, { "Content-Type": `${types[name.split(".").at(-1)]}; charset=utf-8` }).end(body);
-  } catch {
-    response.writeHead(404).end();
-  }
-});
+export function startServer({ config } = {}) {
+  const server = createServer(async (request, response) => {
+    const name = files.get(new URL(request.url, "http://127.0.0.1").pathname);
+    if (!name) {
+      response.writeHead(404).end();
+      return;
+    }
+    try {
+      const body = name === "config.js" && config
+        ? `window.APP_CONFIG = ${JSON.stringify(config)};\n`
+        : await readFile(new URL(`../site/${name}`, import.meta.url));
+      response.writeHead(200, { "Content-Type": `${types[name.split(".").at(-1)]}; charset=utf-8` }).end(body);
+    } catch {
+      response.writeHead(404).end();
+    }
+  });
 
-export function startServer() {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(8765, "127.0.0.1", () => {
