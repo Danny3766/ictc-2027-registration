@@ -37,18 +37,20 @@
         </div>
         <div id="register-panel" role="tabpanel" aria-labelledby="register-tab">
         <form id="registration-form">
-          <label
-            >姓名<input
-              name="full_name"
-              maxlength="100"
-              autocomplete="name"
-              required
-          /></label>
-          <label
-            >區<select name="district_id" required>
-              <option value="">請選擇</option>
-            </select></label
-          >
+          <div class="identity-fields">
+            <label
+              >姓名<input
+                name="full_name"
+                maxlength="100"
+                autocomplete="name"
+                required
+            /></label>
+            <label
+              >區<select name="district_id" required>
+                <option value="">請選擇</option>
+              </select></label
+            >
+          </div>
           <fieldset>
             <legend>活動選擇</legend>
             <p class="hint">請為每項活動選擇參加或不參加，報名截止前都可以修改登記</p>
@@ -74,20 +76,16 @@
           <button type="submit">查詢</button>
         </form>
         <form id="edit-form" hidden>
-          <label>姓名<input name="full_name" maxlength="100" required /></label>
-          <label>區<select name="district_id" required></select></label>
+          <div class="identity-fields">
+            <label>姓名<input name="full_name" maxlength="100" required /></label>
+            <label>區<select name="district_id" required></select></label>
+          </div>
           <fieldset>
             <legend>活動選擇</legend>
             <div id="edit-activities"></div>
           </fieldset>
           <div class="actions">
-            <button type="submit">儲存修改</button>
-            <button type="button" id="cancel-button" class="secondary">
-              取消登記
-            </button>
-            <button type="button" id="restore-button" class="secondary">
-              恢復登記
-            </button>
+            <button type="submit">儲存</button>
           </div>
         </form>
         </div>

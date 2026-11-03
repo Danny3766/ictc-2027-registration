@@ -1,5 +1,16 @@
 import { expect, test } from "@playwright/test";
 
+async function expectEqualIdentityColumns(fields) {
+  const boxes = await fields.locator(":scope > label").evaluateAll((labels) => labels.map((label) => {
+    const { x, y, width } = label.getBoundingClientRect();
+    return { x, y, width };
+  }));
+  expect(boxes).toHaveLength(2);
+  expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(1);
+  expect(Math.abs(boxes[0].width - boxes[1].width)).toBeLessThan(1);
+  expect(boxes[1].x).toBeGreaterThan(boxes[0].x);
+}
+
 test("closed registration remains queryable and disables edits", async ({ page }) => {
   const actions = [];
   await page.route("**/functions/v1/registration", async (route) => {
@@ -36,6 +47,10 @@ test("closed registration remains queryable and disables edits", async ({ page }
   await expect(page.locator("#edit-form")).toBeVisible();
   await expect(page.getByText("38-0001")).toHaveCount(0);
   await expect(page.locator('#edit-form input[name="full_name"]')).toHaveValue("測試登記");
+  await expect(page.getByRole("button", { name: "儲存", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /取消登記|恢復登記/ })).toHaveCount(0);
+  await expect(page.locator("#edit-form button")).toHaveCount(1);
+  await expectEqualIdentityColumns(page.locator("#edit-form .identity-fields"));
   for (const control of await page.locator("#edit-form input, #edit-form select, #edit-form button").all()) {
     await expect(control).toBeDisabled();
   }
@@ -47,6 +62,102 @@ test("closed registration remains queryable and disables edits", async ({ page }
     await expect(page.locator("#program-section")).toBeVisible();
     await expect(page.locator("#query-form")).toBeVisible();
   }
+});
+
+test("save skips unchanged data and resets the comparison baseline", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      return route.fulfill({ json: {
+        settings: { event_name: "測試活動", venue: "", address: "", is_registration_open: true },
+        districts: [{ id: 1, name: "測試區" }],
+        activities: [{ id: 1, title: "測試活動", description: null }],
+        program: [],
+      } });
+    }
+    const body = request.postDataJSON();
+    requests.push(body);
+    if (body.action === "query") {
+      return route.fulfill({ json: {
+        full_name: "測試登記", district_id: 1,
+        record_status: "active", can_change: true,
+        choices: [{ activity_id: 1, attending: true }],
+      } });
+    }
+    return route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
+  await page.locator('#query-form input[name="query_code"]').fill("zzzzzzzz");
+  await page.getByRole("button", { name: "查詢" }).click();
+
+  const name = page.locator('#edit-form input[name="full_name"]');
+  const attending = page.locator('#edit-form input[name="activity_1"][value="true"]');
+  await name.fill("暫時修改");
+  await name.fill("  測試登記  ");
+  await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
+  await attending.check();
+  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await expect(page.locator("#page-message")).toHaveText("目前內容沒有變更。");
+  expect(requests.map(({ action }) => action)).toEqual(["query"]);
+
+  await name.fill("  測試登記修改  ");
+  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await expect(page.locator("#page-message")).toHaveText("登記資料已儲存。");
+  expect(requests.map(({ action }) => action)).toEqual(["query", "update"]);
+  expect(requests[1].full_name).toBe("測試登記修改");
+
+  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await expect(page.locator("#page-message")).toHaveText("目前內容沒有變更。");
+  expect(requests.map(({ action }) => action)).toEqual(["query", "update"]);
+});
+
+test("starting a new query prevents the previous form from being saved", async ({ page }) => {
+  const requests = [];
+  let releasePendingQuery;
+  let queryCount = 0;
+  await page.route("**/functions/v1/registration", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      return route.fulfill({ json: {
+        settings: { event_name: "測試活動", venue: "", address: "", is_registration_open: true },
+        districts: [{ id: 1, name: "測試區" }],
+        activities: [{ id: 1, title: "測試活動", description: null }],
+        program: [],
+      } });
+    }
+    const body = request.postDataJSON();
+    requests.push(body);
+    if (body.action === "query") {
+      queryCount += 1;
+      if (queryCount === 2) await new Promise((resolve) => { releasePendingQuery = resolve; });
+      return route.fulfill({ json: {
+        full_name: "測試登記", district_id: 1,
+        record_status: "active", can_change: true,
+        choices: [{ activity_id: 1, attending: true }],
+      } });
+    }
+    return route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
+  const queryCode = page.locator('#query-form input[name="query_code"]');
+  await queryCode.fill("zzzzzzzz");
+  await page.getByRole("button", { name: "查詢" }).click();
+  await expect(page.locator("#edit-form")).toBeVisible();
+
+  await queryCode.fill("yyyyyyyy");
+  await page.getByRole("button", { name: "查詢" }).click();
+  await expect(page.locator("#edit-form")).toBeHidden();
+  await page.locator("#edit-form").dispatchEvent("submit");
+  await expect(page.locator("#page-message")).toHaveText("請先查詢登記資料。");
+  expect(requests.map(({ action }) => action)).toEqual(["query", "query"]);
+
+  releasePendingQuery();
+  await expect(page.locator("#edit-form")).toBeVisible();
 });
 
 test("registration tabs and success page show only the query code", async ({ page }) => {
@@ -69,6 +180,7 @@ test("registration tabs and success page show only the query code", async ({ pag
 
   await page.goto("/");
   await expect(page.getByRole("tab", { name: "登記參加" })).toHaveAttribute("aria-selected", "true");
+  await expectEqualIdentityColumns(page.locator("#registration-form .identity-fields"));
   await expect(page.locator("#query-form")).toBeHidden();
   await page.getByRole("tab", { name: "查詢或修改登記" }).click();
   await expect(page.locator("#query-form")).toBeVisible();
