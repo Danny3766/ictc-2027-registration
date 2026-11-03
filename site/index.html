@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>2027 國際華語相調特會｜38 會所登記</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./config.js"></script>
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <main class="container">
+      <p id="test-banner" class="test-banner" hidden>測試站｜請勿填寫正式登記資料</p>
+      <header class="hero">
+        <p class="eyebrow">38 會所聖徒登記報名</p>
+        <h1 id="event-name">2027 國際華語相調特會</h1>
+        <p id="event-meta"></p>
+      </header>
+
+      <p id="page-message" class="message" role="status" hidden></p>
+
+      <section
+        class="card"
+        id="program-section"
+        aria-labelledby="program-title"
+        hidden
+      >
+        <h2 id="program-title">聚會時間表</h2>
+        <div id="program" class="program-calendar"></div>
+      </section>
+
+      <section class="card" aria-label="登記服務">
+        <div class="tabs" role="tablist" aria-label="登記服務">
+          <button type="button" id="register-tab" role="tab" aria-controls="register-panel" aria-selected="true" tabindex="0">登記參加</button>
+          <button type="button" id="query-tab" role="tab" aria-controls="query-panel" aria-selected="false" tabindex="-1">查詢或修改登記</button>
+        </div>
+        <div id="register-panel" role="tabpanel" aria-labelledby="register-tab">
+        <form id="registration-form">
+          <div class="identity-fields">
+            <label
+              >姓名<input
+                name="full_name"
+                maxlength="100"
+                autocomplete="name"
+                required
+            /></label>
+            <label
+              >區<select name="district_id" required>
+                <option value="">請選擇</option>
+              </select></label
+            >
+          </div>
+          <fieldset>
+            <legend>活動選擇</legend>
+            <p class="hint">請為每項活動選擇參加或不參加，報名截止前都可以修改登記</p>
+            <div id="activities"></div>
+          </fieldset>
+          <label class="honeypot" aria-hidden="true"
+            >網站<input name="website" tabindex="-1" autocomplete="off"
+          /></label>
+          <button type="submit">送出登記</button>
+        </form>
+        </div>
+        <div id="query-panel" role="tabpanel" aria-labelledby="query-tab" hidden>
+        <form id="query-form" class="query-row">
+          <label
+            >請輸入查詢碼（登記成功後提供的個人查詢碼，共 8 碼英數混合字元）<input
+              name="query_code"
+              minlength="8"
+              maxlength="20"
+              autocapitalize="none"
+              autocomplete="off"
+              required
+          /></label>
+          <button type="submit">查詢</button>
+        </form>
+        <form id="edit-form" hidden>
+          <div class="identity-fields">
+            <label>姓名<input name="full_name" maxlength="100" required /></label>
+            <label>區<select name="district_id" required></select></label>
+          </div>
+          <fieldset>
+            <legend>活動選擇</legend>
+            <div id="edit-activities"></div>
+          </fieldset>
+          <div class="actions">
+            <button type="submit">儲存</button>
+          </div>
+        </form>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>登記完成｜38 會所</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./config.js"></script>
+  <script src="./success.js" defer></script>
+</head>
+<body>
+  <main class="container narrow">
+    <p id="test-banner" class="test-banner" hidden>測試站｜請勿填寫正式登記資料</p>
+    <section class="card success-card">
+      <p class="eyebrow">登記完成</p>
+      <h1>請立即保存查詢碼</h1>
+      <p>查詢碼</p><p id="query-code" class="credential"></p>
+      <p class="notice">請按「複製查詢碼」，再貼到手機備忘錄或您會保存的地方。關閉分頁後無法再次查看查詢碼。日後查詢、確認或修改登記都需要這組查詢碼，請確認已保存再離開。</p>
+      <div class="actions no-print">
+        <button id="copy-button">複製查詢碼</button>
+      </div>
+      <p id="copy-message" class="message no-print" role="status" hidden></p>
+      <label class="confirm no-print"><input id="saved-confirmation" type="checkbox">我已保存查詢碼</label>
+      <a class="button-link no-print" id="back-link" href="./index.html" aria-disabled="true">回登記頁</a>
+    </section>
+  </main>
+</body>
+</html>
