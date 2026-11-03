@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test.skip(process.env.RUN_LIVE_REGISTRATION_TEST !== "1", "Creates a remote registration; run only with test-data cleanup ready.");
 
-test("建立、查詢、修改、取消與恢復登記", async ({ page }) => {
+test("建立、查詢與儲存登記", async ({ page }) => {
   const name = `自動測試 ${Date.now()}`;
   await page.goto("/");
   await expect(page.getByRole("button", { name: "送出登記" })).toBeEnabled();
@@ -25,17 +25,9 @@ test("建立、查詢、修改、取消與恢復登記", async ({ page }) => {
   await expect(page.locator('#edit-form input[name="full_name"]')).toHaveValue(name);
 
   await page.locator('#edit-form input[name="full_name"]').fill(`${name} 修改`);
-  await page.getByRole("button", { name: "儲存修改" }).click();
-  await expect(page.locator("#page-message")).toContainText("已更新");
+  await page.getByRole("button", { name: "儲存", exact: true }).click();
+  await expect(page.locator("#page-message")).toHaveText("登記資料已儲存。");
   await page.getByRole("button", { name: "查詢" }).click();
   await expect(page.locator('#edit-form input[name="full_name"]')).toHaveValue(`${name} 修改`);
-
-  await page.getByRole("button", { name: "取消登記" }).click();
-  await expect(page.locator("#page-message")).toContainText("已取消");
-  await page.getByRole("button", { name: "查詢" }).click();
-  await expect(page.getByRole("button", { name: "恢復登記" })).toBeVisible();
-  await page.getByRole("button", { name: "恢復登記" }).click();
-  await expect(page.locator("#page-message")).toContainText("已恢復");
-  await page.getByRole("button", { name: "查詢" }).click();
-  await expect(page.getByRole("button", { name: "取消登記" })).toBeVisible();
+  await expect(page.locator("#edit-form button")).toHaveCount(1);
 });

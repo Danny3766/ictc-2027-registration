@@ -7,6 +7,7 @@ const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
 const startedAt = Date.now();
 let pageData;
 let activeQueryCode = "";
+let queriedRegistrationBaseline = null;
 
 if (config?.environment === "test") document.querySelector("#test-banner").hidden = false;
 
@@ -117,6 +118,28 @@ function choicesFrom(form) {
   return choices;
 }
 
+function normalizeRegistration(registration) {
+  return {
+    full_name: String(registration.full_name ?? "").trim(),
+    district_id: Number(registration.district_id),
+    choices: registration.choices
+      .map((choice) => ({
+        activity_id: Number(choice.activity_id),
+        attending: choice.attending,
+      }))
+      .sort((left, right) => left.activity_id - right.activity_id),
+  };
+}
+
+function registrationFrom(form) {
+  const data = new FormData(form);
+  return normalizeRegistration({
+    full_name: data.get("full_name"),
+    district_id: data.get("district_id"),
+    choices: choicesFrom(form),
+  });
+}
+
 function setBusy(form, busy) {
   form.querySelectorAll("button").forEach((button) => button.disabled = busy);
 }
@@ -167,16 +190,19 @@ registrationForm.addEventListener("submit", async (event) => {
 queryForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   setBusy(queryForm, true);
+  editForm.hidden = true;
+  activeQueryCode = "";
+  queriedRegistrationBaseline = null;
   try {
-    activeQueryCode = new FormData(queryForm).get("query_code").toLowerCase().replaceAll(/\s/g, "");
-    const registration = await api({ action: "query", query_code: activeQueryCode });
+    const queryCode = new FormData(queryForm).get("query_code").toLowerCase().replaceAll(/\s/g, "");
+    const registration = await api({ action: "query", query_code: queryCode });
     editForm.elements.full_name.value = registration.full_name;
     editForm.elements.district_id.innerHTML = districtOptions(registration.district_id);
     const values = new Map(registration.choices.map((choice) => [choice.activity_id, choice.attending]));
     document.querySelector("#edit-activities").innerHTML = activityFields(pageData.activities, values);
+    activeQueryCode = queryCode;
+    queriedRegistrationBaseline = normalizeRegistration(registration);
     editForm.hidden = false;
-    editForm.querySelector("#cancel-button").hidden = registration.record_status !== "active";
-    editForm.querySelector("#restore-button").hidden = registration.record_status !== "cancelled";
     editForm.querySelectorAll("input, select, button").forEach((control) => control.disabled = !registration.can_change);
     showMessage(registration.can_change ? "已載入登記資料。" : "登記已截止，資料只能查看。");
   } catch (error) {
@@ -189,38 +215,30 @@ queryForm.addEventListener("submit", async (event) => {
 
 editForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!activeQueryCode || !queriedRegistrationBaseline) {
+    showMessage("請先查詢登記資料。", true);
+    return;
+  }
+  const registration = registrationFrom(editForm);
+  if (JSON.stringify(registration) === JSON.stringify(queriedRegistrationBaseline)) {
+    showMessage("目前內容沒有變更。");
+    return;
+  }
   setBusy(editForm, true);
   try {
-    const data = new FormData(editForm);
     await api({
       action: "update",
       query_code: activeQueryCode,
-      full_name: data.get("full_name"),
-      district_id: Number(data.get("district_id")),
-      choices: choicesFrom(editForm),
+      ...registration,
     });
-    showMessage("登記資料已更新。重新查詢可確認最新內容。");
+    queriedRegistrationBaseline = registration;
+    editForm.elements.full_name.value = registration.full_name;
+    showMessage("登記資料已儲存。");
   } catch (error) {
     showMessage(error.message, true);
   } finally {
     setBusy(editForm, false);
   }
 });
-
-for (const [id, action] of [["#cancel-button", "cancel"], ["#restore-button", "restore"]]) {
-  document.querySelector(id).addEventListener("click", async () => {
-    setBusy(editForm, true);
-    try {
-      if (action === "restore") choicesFrom(editForm);
-      await api({ action, query_code: activeQueryCode });
-      showMessage(action === "cancel" ? "登記已取消。" : "登記已恢復。重新查詢可確認最新狀態。");
-      editForm.hidden = true;
-    } catch (error) {
-      showMessage(error.message, true);
-    } finally {
-      setBusy(editForm, false);
-    }
-  });
-}
 
 loadPage();
