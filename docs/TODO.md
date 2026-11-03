@@ -6,19 +6,30 @@
 ## 開發環境進度（2026-11-03）
 
 - 已完成公開登記的建立、查詢、修改、取消、恢復與截止後禁止寫入驗證；唯讀畫面及台灣時間表有 Playwright 檢查。
-- 已驗證匿名角色無法直接讀取敏感資料表，並實際觸發、解除全站查詢鎖定；測試資料已清除，手動登記保留，開發環境入口已關閉。
-- 查詢鎖定 RPC 修正仍在工作樹；安全驗收請求只保存在本機，不隨公開 repo 發布。
+- 已驗證匿名角色無法直接讀取敏感資料表，並實際觸發、解除全站查詢鎖定；先前測試資料已清除，手動登記保留，目前測試環境入口已開放供測試。
+- 查詢鎖定 RPC 修正已提交；安全驗收請求只保存在本機，不隨公開 repo 發布。
 - 維護指令已有不連線的重設測試：確認只傳雜湊、查詢碼只輸出一次；仍須在受控測試登記上驗證遠端重設、舊碼失效與 audit。
 - Playwright 的唯讀與時間表測試已在 Desktop Chromium、Desktop WebKit、Mobile Chrome、Mobile Safari 模擬通過；其餘核心流程仍須跨瀏覽器驗證，實際 Safari 仍須人工驗收。
 - 已準備只打包 `site/` 的 GitHub Pages 部署工作流程；發布前仍須確認公開設定、來源與部署結果。
 - 尚待驗證安全重設查詢碼、跨瀏覽器、可重建的正式環境、實際 Safari、備份及回復；這些仍是公開前關卡。
 - 資料庫與 Edge Function 可以依可用工具套用；保留可重建、可核對的部署步驟。
+- 測試專案已開放三項用餐及主日晚間愛筵；資料庫已驗證全部不參加仍可建立、修改、取消及恢復，Edge Function 實際回傳過 HTTP 429。
+
+## 下次續作：先完成填寫者與測試站
+
+- [ ] 將目前功能分支推到 GitHub，確認 Pages workflow 成功、artifact 只有 `site/`，測試網址使用 `DEV_SUPABASE_URL`／`DEV_SUPABASE_PUBLISHABLE_KEY` 並顯示測試站提示。
+- [ ] 在本機 `127.0.0.1:8765` 與測試版 Pages 檢查填寫畫面：三項用餐、主日晚間愛筵、登記／查詢頁簽、8 碼查詢碼及完成頁複製提醒；確認 Windows Playwright 執行後正常退出。
+- [ ] 實作 Cloudflare Turnstile：填寫頁取得 token，Edge Function 呼叫 Siteverify 驗證；測試與正式環境分開設定 sitekey／secret，secret 只放在 Supabase，並驗證無效、過期及重複使用的 token 會被拒絕。
+- [ ] Turnstile 完成後，以新 migration 更新建立登記防護設定，重新驗收一般流程與防濫用行為；維持不保存 IP 或 IP 雜湊。
+- [ ] 邀請弟兄們在測試站驗證填寫者完整流程與手機版畫面，記錄問題；測試結束後關閉測試入口並依清理流程處理測試資料。
+- [ ] 填寫者流程與測試站驗收完成後，再進行正式環境的部署、備份／回復、RLS、查詢碼重設及實際 Safari 驗收。服事者與管理員頁面暫緩。
+- [ ] 公司主機無法使用 Supabase CLI；在 Dashboard 的 SQL Editor 依序執行版控中的 migration，並從 Edge Functions 頁面部署程式碼，記錄已套用版本，避免重複執行一次性 migration。
 
 ## 現在先做
 
 - [x] Q42：11/5 前凍結功能範圍，只接受 bug、安全與文字內容修正。
 - [x] Q43：建立規劃檔中的全部活動，未確認項目保持未公開。
-- [ ] 測試環境套用活動資訊 migration 後，執行 `supabase/testing/enable-activity-preview.sql`，開放登記並顯示三項用餐與主日晚間愛筵；正式環境維持預設關閉。
+- [x] 測試環境套用活動資訊 migration 後，執行 `supabase/testing/enable-activity-preview.sql`，開放登記並顯示三項用餐與主日晚間愛筵；正式環境維持預設關閉。
 - [ ] 確認開發環境使用仍受支援的 Node.js LTS，再建立最小 `package.json`。
 - [x] 從 `feat/ver-001` 建立新的功能分支，不直接在 `feat/ver-001` 開發。
 - [x] 依 Supabase 建置 wizard，從頭建立開發專案並驗證連線。
@@ -72,7 +83,7 @@ main（正式環境，由 GitHub Pages 部署）
 Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js server。
 
 - [ ] 使用仍受支援且已修補的 Node.js LTS。
-- [ ] 只安裝必要工具：Playwright、靜態伺服器及 Supabase CLI。
+- [ ] 只安裝必要開發工具；公司主機無法使用 Supabase CLI 時改用 Dashboard 部署。
 - [ ] 套件使用精確版本，不使用 `^` 或 `~` 自動升級。
 - [ ] 提交 `package-lock.json`，後續使用 `npm ci`。
 - [ ] 執行 `npm audit` 並檢查直接與間接相依套件。
@@ -117,7 +128,7 @@ Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js se
 - [ ] 不保存 IP 或 IP 雜湊。
 - [ ] 設定全站異常門檻、紀錄及 `is_registration_open` 緊急關閉開關。
 - [ ] 加入 `robots` 禁止索引；不得把它視為存取控制。
-- [ ] Cloudflare Turnstile 保留接口但 11/5 暫不啟用，後續可直接加入。
+- [ ] Cloudflare Turnstile 已選定為下一步的建立登記防護；正式環境開放前完成整合與驗收。
 
 ### Audit
 
@@ -187,7 +198,6 @@ Q43 已確認。
 - 後台名單、搜尋、統計與 CSV。
 - 管理員活動、時間表、區及截止時間設定頁。
 - Audit 查看頁面。
-- Cloudflare Turnstile 正式設定與啟用。
 - GitHub Actions 完整 CI。
 - 進階 rate limiting 服務。
 
@@ -196,7 +206,7 @@ Q43 已確認。
 - 靜態 HTML、CSS、原生 JavaScript，runtime 無 build step。
 - npm 只負責開發工具、測試與本機伺服器。
 - 開發／測試與正式環境使用不同 Supabase 專案。
-- SQL migration 進版控並用 Supabase CLI 套用。
+- SQL migration 進版控；可用 Supabase CLI 時由 CLI 套用，公司主機則依版控順序在 Dashboard SQL Editor 套用。
 - 公開操作經 Edge Function；狀態轉換使用受控 RPC／服務端流程。
 - 第一個垂直切片包含 schema、RLS、建立、完成、查詢、修改、取消及測試。
 - 手機優先，測近期 Chrome、Edge 與 Safari；不設 WCAG 驗收項目。
