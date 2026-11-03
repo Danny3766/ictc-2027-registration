@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>登記完成｜38 會所</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./success.js" defer></script>
+</head>
+<body>
+  <main class="container narrow">
+    <section class="card success-card">
+      <p class="eyebrow">登記完成</p>
+      <h1>請保存查詢資料</h1>
+      <p>流水號</p><p id="serial-no" class="credential"></p>
+      <p>查詢碼</p><p id="query-code" class="credential"></p>
+      <p class="notice">查詢碼只顯示這一次。日後查看、修改或取消登記時需要使用。</p>
+      <div class="actions no-print">
+        <button id="copy-button">複製資料</button>
+        <button id="print-button" class="secondary">列印／儲存</button>
+      </div>
+      <label class="confirm no-print"><input id="saved-confirmation" type="checkbox">我已保存流水號與查詢碼</label>
+      <a class="button-link no-print" id="back-link" href="./index.html" aria-disabled="true">回登記頁</a>
+    </section>
+  </main>
+</body>
+</html>
