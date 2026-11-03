@@ -8,16 +8,18 @@ test("建立、查詢、修改、取消與恢復登記", async ({ page }) => {
   await expect(page.getByRole("button", { name: "送出登記" })).toBeEnabled();
   await page.locator('#registration-form input[name="full_name"]').fill(name);
   await page.locator('#registration-form select[name="district_id"]').selectOption("1");
-  await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
-  await page.locator('#registration-form input[name="activity_2"][value="false"]').check();
+  for (const activity of await page.locator("#registration-form .activity").all()) {
+    await activity.locator('input[value="false"]').check();
+  }
   await page.getByRole("button", { name: "送出登記" }).click();
 
   await expect(page).toHaveURL(/success\.html$/);
   const code = await page.locator("#query-code").innerText();
-  expect(code).toMatch(/^[a-hjkmnp-z2-9]{5}$/);
+  expect(code).toMatch(/^[a-hjkmnp-z2-9]{8}$/);
   await page.locator("#saved-confirmation").check();
   await page.locator("#back-link").click();
 
+  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
   await page.locator('#query-form input[name="query_code"]').fill(code);
   await page.getByRole("button", { name: "查詢" }).click();
   await expect(page.locator('#edit-form input[name="full_name"]')).toHaveValue(name);

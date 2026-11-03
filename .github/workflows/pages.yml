@@ -27,6 +27,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ github.ref_name == 'main' && vars.PROD_SUPABASE_URL || vars.DEV_SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ github.ref_name == 'main' && vars.PROD_SUPABASE_PUBLISHABLE_KEY || vars.DEV_SUPABASE_PUBLISHABLE_KEY }}
+          SITE_ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'test' }}
         run: node scripts/build-public-config.mjs
       - uses: actions/upload-pages-artifact@v4
         with:

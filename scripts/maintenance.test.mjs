@@ -31,7 +31,7 @@ test("query code reset sends only a hash and prints the new code once", async ()
     assert.equal(requests[0].options.headers.apikey, "test-placeholder");
     const body = JSON.parse(requests[0].options.body);
     assert.equal(body.p_serial_no, 1);
-    const code = logs[0].match(/新查詢碼：([a-z2-9]{5})/)?.[1];
+    const code = logs[0].match(/新查詢碼：([a-z2-9]{8})/)?.[1];
     assert.ok(code);
     assert.equal(body.p_query_code_hash, createHmac("sha256", "p".repeat(32)).update(code).digest("hex"));
     assert.equal(logs.filter((line) => line.includes(code)).length, 1);
