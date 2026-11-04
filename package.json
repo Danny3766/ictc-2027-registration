@@ -7,6 +7,7 @@
     "npm": ">=11.20.0 <12"
   },
   "scripts": {
+    "start": "node scripts/serve-site.mjs",
     "test:e2e": "node scripts/test-e2e.mjs"
   },
   "devDependencies": {
