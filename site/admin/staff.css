@@ -7,6 +7,8 @@
 #login-panel, #change-password-panel { max-width: 28rem; margin-inline: auto; }
 
 main.wide button { width: auto; padding-inline: 1.25rem; }
+/* Room below the last form, so a toast that stays on screen (an error) never covers its buttons. */
+main.wide { padding-bottom: 10rem; }
 main.wide .staff-form > button, main.wide .staff-search > button { justify-self: start; min-width: 9rem; }
 .secondary { border-color: #23624b; }
 .danger { border-color: #a33a3a; background: #a33a3a; }
@@ -50,15 +52,29 @@ td button:hover { background: #e8f1ec; }
 table.numeric td:not(:first-child), table.numeric th:not(:first-child) { text-align: right; }
 table.two-labels td:nth-child(2), table.two-labels th:nth-child(2) { text-align: left; }
 
-/* Activity reorder: the ☰ column shows only while reordering. touch-action keeps a finger drag
-   from scrolling the page on phones. */
-.drag-col { display: none; }
-.reordering .drag-col { display: table-cell; width: 3.5rem; text-align: center; }
-td .drag-handle { min-height: 2.5rem; min-width: 2.5rem; padding: 0; border: 0; background: transparent;
+/* Activity reorder: the last column's header holds 調整排序 (and 取消 while reordering); its ☰ handles
+   show only while reordering. touch-action keeps a finger drag from scrolling the page on phones. */
+#admin-activities { position: relative; }
+.reorder-col { width: 1%; text-align: right; }
+.reorder-buttons { display: flex; flex-direction: column; align-items: flex-end; gap: .35rem; }
+th .reorder-buttons button { min-height: 2rem; margin: 0; padding: .25rem .8rem; font-size: .9rem; white-space: nowrap; }
+td .drag-handle { display: none; min-height: 2.5rem; min-width: 2.5rem; padding: 0; border: 0; background: transparent;
   color: #59655f; font-size: 1.3rem; cursor: grab; touch-action: none; }
+.reordering td .drag-handle { display: inline-block; }
 td .drag-handle:hover, td .drag-handle:focus-visible { background: #e8f1ec; }
 tr.dragging { background: #e8f1ec; box-shadow: 0 .25rem .75rem #173c2d26; }
 tr.dragging .drag-handle { cursor: grabbing; }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Messages float at the bottom so a save far down the page is still confirmed where the user is. */
+.toast { position: fixed; z-index: 20; left: 50%; bottom: 1rem; width: min(100% - 2rem, 36rem); transform: translateX(-50%);
+  border-radius: .6rem; box-shadow: 0 .5rem 1.5rem #173c2d33; }
+.toast[hidden] { display: none; }
+.toast .message { margin: 0; padding-right: 3rem; }
+#message-close { position: absolute; top: 50%; right: .35rem; width: 2.25rem; min-height: 2.25rem; margin: 0; padding: 0;
+  border: 0; border-radius: .4rem; color: inherit; background: transparent; font-size: 1.25rem; transform: translateY(-50%); }
+#message-close:hover, #message-close:focus-visible { background: #0000000f; }
 
 .status { display: inline-block; padding: .05rem .5rem; border-radius: 999px; background: #eef2f0; font-size: .85rem; }
 .status-void, .status-reimport_needed { color: #842525; background: #ffe9e9; }
@@ -71,6 +87,9 @@ tr.dragging .drag-handle { cursor: grabbing; }
   th, td { padding: .45rem .4rem; }
   /* The update time column is the least useful on a phone; hiding it keeps name and action visible. */
   #registration-table th:nth-child(6), #registration-table td:nth-child(6) { display: none; }
+  /* The header cell scrolls sideways with the table, so on phones the buttons sit beside the 活動 title
+     (absolute to the section, which the table's scroll box does not clip). */
+  #admin-activities .reorder-buttons { position: absolute; top: 2.3rem; right: 1.25rem; flex-direction: row; }
   /* While reordering on a phone, keep only name, type and ☰ so the handle stays on screen
      (time, published and the disabled edit button are not needed to pick an order). */
   #admin-activities.reordering :is(th, td):nth-child(3),

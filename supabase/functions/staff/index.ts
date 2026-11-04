@@ -230,7 +230,8 @@ export async function handler(request) {
   }
 
   if (body.action === "save_reference") {
-    if (!["settings", "district", "activity", "program"].includes(body.kind)
+    // Districts are fixed: renaming one would break the name + district lookup of existing registrations.
+    if (!["settings", "activity", "program"].includes(body.kind)
       || !body.data || typeof body.data !== "object" || Array.isArray(body.data)) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }

@@ -14,7 +14,7 @@ let count = 0;
 let search = "";
 let visibleRegistrations = [];
 let selectedRegistration;
-const adminSections = ["#admin-accounts", "#admin-settings", "#admin-districts", "#admin-activities", "#admin-program"];
+const adminSections = ["#admin-accounts", "#admin-settings", "#admin-activities", "#admin-program"];
 
 function showAdminSections(visible) {
   for (const selector of adminSections) document.querySelector(selector).hidden = !visible;
@@ -56,11 +56,25 @@ function statusCell(row, group, value) {
 
 if (config?.environment === "test") document.querySelector("#test-banner").hidden = false;
 
-function showMessage(value, error = false) {
+const toast = document.querySelector("#toast");
+let messageTimer;
+// Success notes leave after 5 seconds; errors and notes that tell the user what to do next
+// (stay = true) remain until closed or replaced, so they are not missed.
+function showMessage(value, error = false, stay = error) {
+  clearTimeout(messageTimer);
   message.textContent = value;
+  // The toast appears together with its text, which screen readers often skip; this region is always there.
+  document.querySelector("#message-live").textContent = value;
   message.classList.toggle("error", error);
-  message.hidden = false;
+  toast.hidden = false;
+  if (!stay) messageTimer = setTimeout(hideMessage, 5000);
 }
+
+function hideMessage() {
+  clearTimeout(messageTimer);
+  toast.hidden = true;
+}
+document.querySelector("#message-close").addEventListener("click", hideMessage);
 
 function clearSession() {
   session = null;
@@ -178,7 +192,7 @@ function setEditing(form, item) {
   submit.dataset.label ??= submit.textContent;
   if (item) {
     form.dataset.editingId = item.id;
-    submit.textContent = `${submit.dataset.label}（編輯：${item.title ?? item.name}）`;
+    submit.textContent = `${submit.dataset.label}（編輯：${item.title}）`;
   } else {
     delete form.dataset.editingId;
     submit.textContent = submit.dataset.label;
@@ -189,7 +203,6 @@ function setEditing(form, item) {
 // A full redraw leaves the activity table alone while reordering, so the unsaved drag order stays.
 function renderReferenceRows(only) {
   for (const [table, items, columns, form, transform] of [
-    ["#district-rows", reference.districts, ["name", "sort_order"], "#district-form", (item) => item],
     ["#activity-rows", reference.activities, ["title", "category", "starts_at", "is_published"], "#activity-form",
       (item) => ({ ...item, starts_at: taipeiInput(item.starts_at), ends_at: taipeiInput(item.ends_at) })],
     ["#program-rows", reference.program, ["event_date", "start_time", "title", "is_visible"], "#program-form",
@@ -213,7 +226,7 @@ function renderReferenceRows(only) {
         handle.textContent = "☰";
         handle.setAttribute("aria-label", `拖曳排序：${item.title}`);
         const handleCell = cell(row, "");
-        handleCell.className = "drag-col";
+        handleCell.className = "reorder-col";
         handleCell.append(handle);
       }
       rows.append(row);
@@ -524,8 +537,7 @@ async function openStaff() {
 }
 
 for (const [selector, kind] of [
-  ["#settings-form", "settings"], ["#district-form", "district"],
-  ["#activity-form", "activity"], ["#program-form", "program"],
+  ["#settings-form", "settings"], ["#activity-form", "activity"], ["#program-form", "program"],
 ]) {
   const form = document.querySelector(selector);
   form.addEventListener("submit", (event) => saveReference(event, kind));
@@ -682,7 +694,7 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
     await authRequest("token?grant_type=password", { email: `${username}@accounts.invalid`, password: form.elements.password.value });
     form.elements.password.value = "";
     // A message left from before login (for example "請使用新密碼重新登入") no longer applies.
-    message.hidden = true;
+    hideMessage();
     await openStaff();
   } catch (error) { showMessage(error.message, true); }
 });
@@ -696,7 +708,7 @@ document.querySelector("#change-password-form").addEventListener("submit", async
     });
     form.reset();
     clearSession();
-    showMessage("密碼已更改，請使用新密碼重新登入。");
+    showMessage("密碼已更改，請使用新密碼重新登入。", false, true);
   } catch (error) { showMessage(error.message, true); }
 });
 

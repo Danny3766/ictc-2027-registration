@@ -84,16 +84,16 @@ async function login(page) {
   await page.getByRole("button", { name: "登入" }).click();
 }
 
-test("saving an edited district leaves the form ready to create a new one", async ({ page }) => {
+test("saving an edited activity leaves the form ready to create a new one", async ({ page }) => {
   const saved = [];
-  await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); });
+  await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); }, "測試登記", threeActivities);
   await login(page);
-  await page.locator("#district-rows").getByRole("button", { name: "編輯" }).click();
-  await page.getByRole("button", { name: "儲存區選項" }).click();
+  await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).first().click();
+  await page.locator("#activity-form").getByRole("button", { name: /^儲存活動/ }).click();
   await expect(page.locator("#message")).toHaveText("設定已儲存。");
-  await page.locator('#district-form input[name="name"]').fill("新區");
-  await page.locator('#district-form input[name="sort_order"]').fill("9");
-  await page.getByRole("button", { name: "儲存區選項" }).click();
+  await page.locator('#activity-form input[name="title"]').fill("新活動");
+  await page.locator('#activity-form input[name="sort_order"]').fill("9");
+  await page.getByRole("button", { name: "儲存活動" }).click();
   await expect.poll(() => saved.length).toBe(2);
   expect(saved[0].id).toBe("1");
   expect(saved[1].id).toBeUndefined();
@@ -101,19 +101,19 @@ test("saving an edited district leaves the form ready to create a new one", asyn
 
 test("cancelling an edit makes the next save create a new row", async ({ page }) => {
   const saved = [];
-  await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); });
+  await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); }, "測試登記", threeActivities);
   await login(page);
-  const form = page.locator("#district-form");
-  await page.locator("#district-rows").getByRole("button", { name: "編輯" }).click();
-  await expect(form.locator('button[type="submit"]')).toHaveText("儲存區選項（編輯：林森）");
+  const form = page.locator("#activity-form");
+  await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).first().click();
+  await expect(form.locator('button[type="submit"]')).toHaveText("儲存活動（編輯：活動甲）");
   await form.getByRole("button", { name: "取消編輯" }).click();
-  await expect(form.locator('button[type="submit"]')).toHaveText("儲存區選項");
-  await form.locator('input[name="name"]').fill("新區");
+  await expect(form.locator('button[type="submit"]')).toHaveText("儲存活動");
+  await form.locator('input[name="title"]').fill("新活動");
   await form.locator('input[name="sort_order"]').fill("9");
   await form.locator('button[type="submit"]').click();
   await expect.poll(() => saved.length).toBe(1);
   expect(saved[0].id).toBeUndefined();
-  expect(saved[0].name).toBe("新區");
+  expect(saved[0].title).toBe("新活動");
 });
 
 test("a temporary back-office outage on reload keeps the login", async ({ page }) => {
@@ -426,4 +426,64 @@ test("leaving reorder mode in the middle of a drag ends the drag", async ({ page
   await page.mouse.up();
   expect(await activityTitles(page)).toEqual(["活動甲", "活動乙", "活動丙"]);
   await expect(page.locator("#activity-rows tr.dragging")).toHaveCount(0);
+});
+
+test("the reorder buttons are fully on screen: in the table header on wide screens, beside the title on phones", async ({ page }) => {
+  await mockStaff(page, "admin", () => {}, "測試登記", threeActivities);
+  await login(page);
+  const { width } = page.viewportSize();
+  // toBeVisible ignores clipping by the table's scroll box, so check the button's box against the screen.
+  const onScreen = async (name) => {
+    const box = await page.getByRole("button", { name, exact: true }).boundingBox();
+    expect(box.x, `${name} left edge`).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, `${name} right edge`).toBeLessThanOrEqual(width);
+    return box;
+  };
+  await page.locator("#admin-activities").scrollIntoViewIfNeeded();
+  const button = await onScreen("調整排序");
+  const phoneLayout = await page.locator(".reorder-buttons").evaluate((element) => getComputedStyle(element).position === "absolute");
+  if (!phoneLayout) {
+    const row = await page.locator("#admin-activities thead tr").boundingBox();
+    expect(row.x + row.width - (button.x + button.width)).toBeLessThan(24);
+  }
+  await page.getByRole("button", { name: "調整排序" }).click();
+  await onScreen("完成排序");
+  await onScreen("取消");
+});
+
+test("success messages float at the bottom and leave after 5 seconds; errors stay until closed", async ({ page }) => {
+  await page.clock.install();
+  await mockStaff(page, "admin", () => {}, "測試登記", threeActivities);
+  await login(page);
+  await page.getByRole("button", { name: "儲存網站設定" }).click();
+  await expect(page.locator("#message")).toHaveText("設定已儲存。");
+  await expect(page.getByRole("status")).toHaveText("設定已儲存。");
+  const box = await page.locator("#toast").boundingBox();
+  expect(box.y + box.height).toBeGreaterThan(page.viewportSize().height - 40);
+  await page.clock.fastForward(6000);
+  await expect(page.locator("#message")).toBeHidden();
+
+  await page.getByRole("button", { name: "調整排序" }).click();
+  await page.locator('#activity-form input[name="title"]').fill("新活動");
+  await page.locator('#activity-form input[name="sort_order"]').fill("9");
+  await page.locator("#activity-form").evaluate((form) => form.requestSubmit());
+  await page.clock.fastForward(6000);
+  await expect(page.locator("#message")).toHaveText("請先完成或取消活動排序，再儲存活動。");
+  await page.getByRole("button", { name: "關閉訊息" }).click();
+  await expect(page.locator("#message")).toBeHidden();
+});
+
+test("the note after a password change stays until the user acts on it", async ({ page }) => {
+  await page.clock.install();
+  await mockStaff(page, "staff", () => {}, "測試登記", {
+    me: () => ({ json: { profile: { auth_user_id: "123e4567-e89b-42d3-a456-426614174000", display_name: "測試服事者", role: "staff", must_change_password: true } } }),
+    change_password: () => ({ json: { success: true } }),
+  });
+  await login(page);
+  const form = page.locator("#change-password-form");
+  for (const input of await form.locator('input[type="password"]').all()) await input.fill("new-test-password-123");
+  await form.locator('button[type="submit"]').click();
+  await expect(page.locator("#message")).toHaveText("密碼已更改，請使用新密碼重新登入。");
+  await page.clock.fastForward(10000);
+  await expect(page.locator("#message")).toBeVisible();
 });

@@ -14,7 +14,6 @@
     <main class="container wide">
       <p id="test-banner" class="test-banner" hidden>測試站｜此處為測試資料</p>
       <header class="hero staff-hero"><h1>登記後台</h1><p id="identity"></p></header>
-      <p id="message" class="message" role="status" hidden></p>
 
       <section id="login-panel" class="card">
         <h2>服事者登入</h2>
@@ -42,7 +41,6 @@
           <a href="#section-stats">統計與匯出</a>
           <a href="#admin-accounts" data-admin-link hidden>帳號</a>
           <a href="#admin-settings" data-admin-link hidden>網站設定</a>
-          <a href="#admin-districts" data-admin-link hidden>區</a>
           <a href="#admin-activities" data-admin-link hidden>活動</a>
           <a href="#admin-program" data-admin-link hidden>時間表</a>
           <button id="logout-button" type="button" class="secondary">登出</button>
@@ -129,24 +127,14 @@
           </form>
         </section>
 
-        <section id="admin-districts" class="card" hidden>
-          <h2>區選項</h2>
-          <div class="table-scroll"><table><thead><tr><th>區</th><th>排序</th><th>操作</th></tr></thead><tbody id="district-rows"></tbody></table></div>
-          <form id="district-form" class="staff-form">
-            <label>區名<input name="name" maxlength="100" required /></label>
-            <label>排序<input name="sort_order" type="number" required /></label>
-            <div class="form-buttons"><button type="submit">儲存區選項</button><button type="reset" class="secondary">取消編輯</button></div>
-          </form>
-        </section>
-
         <section id="admin-activities" class="card" hidden>
           <h2>活動</h2>
-          <div class="staff-actions">
-            <button id="reorder-activities" type="button" class="secondary">調整排序</button>
-            <button id="cancel-reorder" type="button" class="secondary" hidden>取消</button>
-            <span id="reorder-hint" class="hint" hidden>拖曳右側 ☰ 調整順序，或聚焦 ☰ 後按 ↑ ↓；完成後按「完成排序」儲存。</span>
-          </div>
-          <div class="table-scroll"><table><thead><tr><th>名稱</th><th>類型</th><th>時間</th><th>公開</th><th>操作</th><th class="drag-col">排序</th></tr></thead><tbody id="activity-rows"></tbody></table></div>
+          <p id="reorder-hint" class="hint" hidden>拖曳右側 ☰ 調整順序，或聚焦 ☰ 後按 ↑ ↓；完成後按「完成排序」儲存。</p>
+          <div class="table-scroll"><table><thead><tr><th>名稱</th><th>類型</th><th>時間</th><th>公開</th><th>操作</th>
+            <th class="reorder-col" abbr="排序"><span class="visually-hidden">排序</span><div class="reorder-buttons">
+              <button id="reorder-activities" type="button" class="secondary">調整排序</button>
+              <button id="cancel-reorder" type="button" class="secondary" hidden>取消</button>
+            </div></th></tr></thead><tbody id="activity-rows"></tbody></table></div>
           <form id="activity-form" class="staff-form">
             <label>類型<select name="category"><option value="meeting">聚會</option><option value="meal">用餐</option><option value="other">其他</option></select></label>
             <label>名稱<input name="title" maxlength="200" required /></label>
@@ -178,6 +166,12 @@
           </form>
         </section>
 
+      </div>
+
+      <p id="message-live" class="visually-hidden" role="status"></p>
+      <div id="toast" class="toast" hidden>
+        <p id="message" class="message"></p>
+        <button id="message-close" type="button" aria-label="關閉訊息">×</button>
       </div>
     </main>
   </body>
