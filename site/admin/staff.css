@@ -1,0 +1,9 @@
+.staff-form, .staff-search { display: grid; gap: 1rem; max-width: 32rem; }
+.staff-form label, .staff-search label { display: grid; gap: .3rem; }
+.staff-actions { display: flex; align-items: center; gap: .8rem; margin: 1rem 0; }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: .65rem; border-bottom: 1px solid #d8e0e5; text-align: left; vertical-align: top; white-space: nowrap; }
+td button { margin-right: .4rem; }
+.staff-choice { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; padding: .5rem 0; }
+.staff-choice strong { width: 100%; }

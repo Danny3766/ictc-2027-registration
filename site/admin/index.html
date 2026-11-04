@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>38 會所登記後台</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="./staff.css" />
+    <script src="../config.js"></script>
+    <script src="./staff.js" defer></script>
+  </head>
+  <body>
+    <main class="container">
+      <p id="test-banner" class="test-banner" hidden>測試站｜此處為測試資料</p>
+      <header class="hero"><h1>登記後台</h1><p id="identity"></p></header>
+      <p id="message" class="message" role="status" hidden></p>
+
+      <section id="login-panel" class="card">
+        <h2>服事者登入</h2>
+        <form id="login-form" class="staff-form">
+          <label>帳號<input name="username" autocomplete="username" required /></label>
+          <label>密碼<input name="password" type="password" autocomplete="current-password" required /></label>
+          <button type="submit">登入</button>
+        </form>
+      </section>
+
+      <section id="change-password-panel" class="card" hidden>
+        <h2>更改初始密碼</h2>
+        <p>首次登入或密碼重設後須更改密碼，完成後才能使用後台。</p>
+        <form id="change-password-form" class="staff-form">
+          <label>目前密碼（初始密碼）<input name="current_password" type="password" autocomplete="current-password" required /></label>
+          <label>新密碼（至少 12 字元；中文字約可 24 字）<input name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required /></label>
+          <button type="submit">更改密碼</button>
+        </form>
+      </section>
+
+      <div id="staff-panel" hidden>
+        <div class="staff-actions"><button id="logout-button" type="button">登出</button></div>
+        <section class="card">
+          <h2>補登</h2>
+          <form id="new-registration-form" class="staff-form">
+            <label>姓名<input name="full_name" maxlength="100" required /></label>
+            <label>區<select name="district_id" required></select></label>
+            <fieldset><legend>公開活動選擇</legend><div id="new-registration-choices"></div></fieldset>
+            <button type="submit">建立補登</button>
+          </form>
+          <p id="new-registration-code" class="message" hidden></p>
+        </section>
+        <section class="card">
+          <h2>登記名單</h2>
+          <form id="search-form" class="staff-search">
+            <label>姓名或流水號<input name="search" maxlength="100" /></label>
+            <button type="submit">搜尋</button>
+          </form>
+          <p id="registration-count"></p>
+          <div class="table-scroll"><table><thead><tr><th>流水號</th><th>姓名</th><th>區</th><th>狀態</th><th>匯入</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="registration-rows"></tbody></table></div>
+          <div class="staff-actions"><button id="previous-page" type="button">上一頁</button><span id="page-number"></span><button id="next-page" type="button">下一頁</button></div>
+        </section>
+
+        <section id="registration-detail" class="card" hidden>
+          <h2 id="detail-title">登記資料</h2>
+          <form id="edit-registration-form" class="staff-form">
+            <label>姓名<input name="full_name" maxlength="100" required /></label>
+            <label>區<select name="district_id" required></select></label>
+            <fieldset><legend>公開活動選擇</legend><div id="detail-choices"></div></fieldset>
+            <button type="submit">儲存登記</button>
+          </form>
+          <form id="import-form" class="staff-search">
+            <label>匯入狀態<select name="status"><option value="pending">待匯入</option><option value="imported">已匯入</option><option value="reimport_needed">需重新匯入</option></select></label>
+            <button type="submit">更新匯入狀態</button>
+          </form>
+          <div class="staff-actions">
+            <button id="confirm-distinct" type="button">確認為不同人</button>
+            <button id="void-duplicate" type="button">標記重複作廢</button>
+            <button id="reset-query-code" type="button">重設查詢碼</button>
+          </div>
+          <p id="new-query-code" class="message" hidden></p>
+        </section>
+
+        <section class="card">
+          <h2>統計與匯出</h2>
+          <p>依目前公開活動與有效登記計算。</p>
+          <div class="staff-actions"><button id="refresh-stats" type="button">更新統計</button><button id="download-csv" type="button">下載 CSV</button></div>
+          <p id="stats-summary"></p>
+          <div class="table-scroll"><table><thead><tr><th>區</th><th>有效登記</th><th>預估費用</th></tr></thead><tbody id="district-stats-rows"></tbody></table></div>
+          <div class="table-scroll"><table><thead><tr><th>區</th><th>活動</th><th>參加</th><th>不參加</th><th>未回覆</th></tr></thead><tbody id="district-activity-stats-rows"></tbody></table></div>
+          <div class="table-scroll"><table><thead><tr><th>活動</th><th>參加</th><th>不參加</th><th>未回覆</th><th>預估費用</th></tr></thead><tbody id="stats-rows"></tbody></table></div>
+        </section>
+
+        <section id="admin-accounts" class="card" hidden>
+          <h2>服事者帳號</h2>
+          <form id="create-staff-form" class="staff-form">
+            <label>帳號<input name="username" minlength="3" maxlength="31" pattern="[a-z][a-z0-9_-]*" required /></label>
+            <label>顯示名稱<input name="display_name" maxlength="100" required /></label>
+            <label>所屬區<select name="district_id"><option value="">未指定</option></select></label>
+            <label>角色<select name="role"><option value="staff">服事者</option><option value="admin">管理員</option></select></label>
+            <button type="submit">建立帳號</button>
+          </form>
+          <p id="temporary-password" class="message" hidden></p>
+          <div class="table-scroll"><table><thead><tr><th>帳號</th><th>名稱</th><th>角色</th><th>啟用</th><th>初始密碼</th><th>操作</th></tr></thead><tbody id="staff-rows"></tbody></table></div>
+        </section>
+
+        <section id="admin-settings" class="card" hidden>
+          <h2>網站與登記設定</h2>
+          <form id="settings-form" class="staff-form">
+            <label>活動名稱<input name="event_name" maxlength="200" required /></label>
+            <label>地點<input name="venue" maxlength="200" /></label>
+            <label>地址<input name="address" maxlength="300" /></label>
+            <label>截止時間（台灣時間；留空代表不設期限）<input name="registration_deadline_at" type="datetime-local" /></label>
+            <label><input name="is_registration_open" type="checkbox" /> 開放登記</label>
+            <button type="submit">儲存網站設定</button>
+          </form>
+        </section>
+
+        <section id="admin-districts" class="card" hidden>
+          <h2>區選項</h2>
+          <div class="table-scroll"><table><thead><tr><th>區</th><th>排序</th><th>狀態</th><th>操作</th></tr></thead><tbody id="district-rows"></tbody></table></div>
+          <form id="district-form" class="staff-form">
+            <label>區名<input name="name" maxlength="100" required /></label>
+            <label>排序<input name="sort_order" type="number" required /></label>
+            <label><input name="is_active" type="checkbox" checked /> 啟用</label>
+            <button type="submit">儲存區選項</button>
+            <button type="reset">取消編輯</button>
+          </form>
+        </section>
+
+        <section id="admin-activities" class="card" hidden>
+          <h2>活動</h2>
+          <div class="table-scroll"><table><thead><tr><th>名稱</th><th>類型</th><th>時間</th><th>公開</th><th>操作</th></tr></thead><tbody id="activity-rows"></tbody></table></div>
+          <form id="activity-form" class="staff-form">
+            <label>類型<select name="category"><option value="meeting">聚會</option><option value="meal">用餐</option><option value="other">其他</option></select></label>
+            <label>名稱<input name="title" maxlength="200" required /></label>
+            <label>開始時間（台灣時間）<input name="starts_at" type="datetime-local" /></label>
+            <label>結束時間（台灣時間）<input name="ends_at" type="datetime-local" /></label>
+            <label>地點<input name="venue" maxlength="200" /></label>
+            <label>地址<input name="address" maxlength="300" /></label>
+            <label>地圖連結<input name="map_url" type="url" maxlength="1000" /></label>
+            <label>說明<textarea name="description" maxlength="2000"></textarea></label>
+            <label>每人規劃費用（留空代表未設定）<input name="fee_amount" type="number" min="0" /></label>
+            <label>排序<input name="sort_order" type="number" required /></label>
+            <label><input name="is_published" type="checkbox" /> 公開活動</label>
+            <button type="submit">儲存活動</button>
+            <button type="reset">取消編輯</button>
+          </form>
+        </section>
+
+        <section id="admin-program" class="card" hidden>
+          <h2>詳細時間表</h2>
+          <div class="table-scroll"><table><thead><tr><th>日期</th><th>時間</th><th>項目</th><th>顯示</th><th>操作</th></tr></thead><tbody id="program-rows"></tbody></table></div>
+          <form id="program-form" class="staff-form">
+            <label>日期<input name="event_date" type="date" required /></label>
+            <label>開始<input name="start_time" type="time" /></label>
+            <label>結束<input name="end_time" type="time" /></label>
+            <label>名稱<input name="title" maxlength="200" required /></label>
+            <label>備註<input name="note" maxlength="500" /></label>
+            <label>排序<input name="sort_order" type="number" required /></label>
+            <label><input name="is_visible" type="checkbox" checked /> 顯示</label>
+            <button type="submit">儲存時間表項目</button>
+            <button type="reset">取消編輯</button>
+          </form>
+        </section>
+
+        <section id="admin-audit" class="card" hidden>
+          <h2>最近的稽核紀錄</h2>
+          <div class="table-scroll"><table><thead><tr><th>時間</th><th>操作者</th><th>動作</th><th>目標</th></tr></thead><tbody id="audit-rows"></tbody></table></div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

@@ -10,7 +10,7 @@
 - 公開登記、查詢、修改與截止規則已有自動化驗證；跨瀏覽器、實際 Safari、部署重建及資料復原仍列為公開前驗收項目。
 - 已建立資料庫遷移、Row Level Security、Edge Function 與靜態網站部署流程。
 - 查詢碼重設及防濫用流程仍須在受控環境完成端對端驗收。
-- 服事者／管理員登入與後台尚未實作，已納入本次公開前必要範圍。
+- 服事者／管理員登入與後台已有本機實作及自動測試；仍須部署至測試 Supabase，使用獨立測試帳號完成真人驗收。
 - 開發工具版本與相依套件安全狀態應在每個開發環境依 `package.json` 和 lockfile 檢查。
 
 ## 下一個開發工作階段：依序執行
@@ -20,13 +20,14 @@
 - [ ] 確認工作目錄乾淨、分支與遠端同步狀態正確；依專案分支流程建立功能分支。
 - [ ] 確認 Node.js 與 npm 符合 `package.json` 的 engines，再執行 `npm ci`。
 - [ ] 確認 `npm audit` 無漏洞，執行 `npm run test:e2e`；Windows 下確認測試 process 正常結束。
-- [ ] 確認部署環境可用瀏覽器登入 Supabase、GitHub；先確認是否能使用 Supabase CLI。CLI 不可用時，依本文件的 Dashboard 部署步驟執行。
+- [ ] 確認部署環境可用瀏覽器登入 Supabase、GitHub；部署環境不使用 Supabase CLI，依受控的 Dashboard 流程逐版套用已版控 SQL 與 Edge Function 原始碼，記錄環境、版本及結果。
 
 ### 2. 確認測試環境部署
 
 - [ ] 將已完成功能依既定分支流程合併到共用測試分支，確認 Pages workflow 成功；變更登記流程前先通知正在試填的人。
 - [ ] 檢查部署 artifact 只包含 `site/` 成品，沒有 SQL、測試、`node_modules`、文件或 secrets。
 - [ ] 確認測試站連到開發資料環境並顯示測試站提示；正式環境設定不可混用。
+- [ ] 在 Dashboard 確認 Edge Function 的 Verify JWT：`staff` 開啟、`registration` 關閉。Dashboard 部署不讀取 `supabase/config.toml`，兩邊設定須一致。
 - [ ] 在本機與測試站檢查活動、時間表、登記／查詢操作、查詢碼及完成頁保存提醒。
 
 ### 3. 測試站完整驗收
@@ -188,7 +189,7 @@ Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js se
 ### 公開前
 
 - [ ] 以桌機、筆電、平板、手機寬度驗證 RWD 版面與主要操作；實際裝置驗收另列於正式環境關卡。
-- [ ] 資料庫 migration 可重跑。
+- [x] 全部 migration 可在乾淨的本機 PostgreSQL 依版本順序套用；已套用的版本不得重複執行，Dashboard 部署須記錄版本。
 - [ ] RLS 允許與拒絕案例通過。
 - [ ] Playwright 覆蓋建立、查詢、儲存、錯誤查詢碼與截止規則。
 - [ ] 自動測試 Desktop Chromium、Desktop WebKit、Mobile Chrome 與 Mobile Safari 模擬。
@@ -236,6 +237,8 @@ Q43 已確認。
 - Cloudflare Turnstile：後續以公開設定提供 site key、伺服端 secret 驗證 token，使用新 migration 調整防護；測試與正式環境分開設定。未完成前不讓公開流程依賴 Turnstile。
 - GitHub Actions 完整 CI。
 - 進階 rate limiting 服務。
+- 後台統計的匯入狀態人數（待匯入、已匯入、需重新匯入）：待大會匯入流程確定後再做。
+- 公開 `create_registration`／`update_registration` 改用與後台共用的選項驗證函式：把 `staff_choices_valid` 改為中性名稱，新增 migration 重新定義公開函式，修改後重跑公開流程測試。
 
 ## 已定案摘要
 

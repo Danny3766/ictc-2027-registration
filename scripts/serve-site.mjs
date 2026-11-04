@@ -10,6 +10,10 @@ const files = new Map([
   ["/app.js", "app.js"],
   ["/success.js", "success.js"],
   ["/config.js", "config.js"],
+  ["/admin/", "admin/index.html"],
+  ["/admin/index.html", "admin/index.html"],
+  ["/admin/staff.js", "admin/staff.js"],
+  ["/admin/staff.css", "admin/staff.css"],
 ]);
 const types = { html: "text/html", css: "text/css", js: "text/javascript" };
 
