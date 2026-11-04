@@ -35,10 +35,6 @@ begin
   if not public.update_registration(v_code_hash, '安全驗收測試修改', v_district_id, v_choices) then
     raise exception 'ALL_NO_UPDATE_FAILED';
   end if;
-  if not public.set_registration_status(v_code_hash, 'cancelled') or
-    not public.set_registration_status(v_code_hash, 'active') then
-    raise exception 'ALL_NO_RESTORE_FAILED';
-  end if;
 
   update public.registration_create_limits
   set window_started_at = now(), created_count = 50 where id = true;

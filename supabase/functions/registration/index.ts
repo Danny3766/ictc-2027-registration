@@ -144,7 +144,7 @@ export async function handler(request) {
     return response({ error: "登記失敗，請稍後再試" }, 500);
   }
 
-  if (!["query", "update", "cancel", "restore"].includes(String(action))) {
+  if (!["query", "update"].includes(String(action))) {
     return response({ error: "INVALID_ACTION" }, 400);
   }
 
@@ -175,16 +175,12 @@ export async function handler(request) {
     return response(publicRegistration);
   }
 
-  const rpc = action === "update" ? "update_registration" : "set_registration_status";
-  const parameters = action === "update"
-    ? {
-      p_query_code_hash: codeHash,
-      p_full_name: body.full_name,
-      p_district_id: body.district_id,
-      p_choices: body.choices,
-    }
-    : { p_query_code_hash: codeHash, p_status: action === "cancel" ? "cancelled" : "active" };
-  const { data, error } = await database.rpc(rpc, parameters);
+  const { data, error } = await database.rpc("update_registration", {
+    p_query_code_hash: codeHash,
+    p_full_name: body.full_name,
+    p_district_id: body.district_id,
+    p_choices: body.choices,
+  });
   const found = !error && data === true;
   if (!error || !error.message.includes("REGISTRATION_CLOSED")) {
     if (!await recordQueryResult(database, found)) {
