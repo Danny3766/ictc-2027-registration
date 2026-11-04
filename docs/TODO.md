@@ -31,7 +31,7 @@
 - [ ] 確認測試站連到開發資料環境並顯示測試站提示；正式環境設定不可混用。
 - [ ] 在 Dashboard 確認 Edge Function 的 Verify JWT：`staff` 開啟、`registration` 關閉。Dashboard 部署不讀取 `supabase/config.toml`，兩邊設定須一致。
 - [ ] 套用 `202611040001_staff_backoffice_and_name_lookup.sql` 前，清空測試站的登記資料（`registrations`、`registration_choices`），並通知試填者以新流程重填；試填回饋先另行保存。
-- [ ] 測試站已套用 `202611030001` 至 `202611030004`；接著套用 `202611040001_staff_backoffice_and_name_lookup.sql`，部署 `registration` 與 `staff` Edge Function。
+- [ ] 測試站已套用 `202611030001` 至 `202611030004`；接著依序套用 `202611040001_staff_backoffice_and_name_lookup.sql`、`202611040002_activity_reorder.sql`，部署 `registration` 與 `staff` Edge Function。
 - [ ] 在 Edge Function secrets 新增至少 32 字元的 `RATE_LIMIT_KEY`；移除已不使用的 `QUERY_CODE_PEPPER`。
 - [ ] 在本機與測試站檢查活動、時間表、登記、姓名與區查詢、修改活動選擇及完成頁摘要。
 
@@ -47,7 +47,7 @@
   - [ ] 資料庫 locale 對非英文字母的大小寫轉換與後台一致：`select registration_name_key('JOSÉ')` 須回傳 `josé`。
 - [ ] Playwright 在 Desktop Chromium、Desktop WebKit、Mobile Chrome、Mobile Safari 模擬驗證建立、姓名與區查詢、儲存、查無資料、同名同區擋下及截止行為。
 - [ ] 確認匿名角色無法直接讀取敏感資料，並驗證依來源限速與全站上限有效、到期自動恢復。
-- [ ] 使用獨立 `admin` 與 `staff` 測試帳號，驗收登入、角色權限、名單、補登與更正姓名或區的同名擋下、作廢後可重新登記、統計、CSV、設定及 audit；將結果記在 `docs/驗收紀錄.md`。
+- [ ] 使用獨立 `admin` 與 `staff` 測試帳號，驗收登入、角色權限、名單、補登與更正姓名或區的同名擋下、作廢後可重新登記、統計、CSV 及設定；將結果記在 `docs/驗收紀錄.md`。
 - [ ] 邀請弟兄姊妹在測試站實際操作手機流程，記錄並修正阻擋使用的問題。
 - [ ] 測試資料須能與正式資料區分；測試完成後依核准的資料生命週期程序處理。
 
@@ -169,7 +169,7 @@ Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js se
 - [ ] 記錄公開建立、修改，以及後台異動。
 - [ ] 保存操作者、動作、目標、時間與非機密欄位的修改前後值。
 - [ ] 不保存密碼、原始 IP 或防機器人憑證。
-- [ ] Audit 僅供 `admin` 查看；本次完成查看畫面。
+- [ ] 稽核紀錄照常寫入，不在後台顯示。
 
 ## 資料與狀態規則
 
@@ -231,7 +231,7 @@ Q43 已確認。
 - [ ] Supabase Auth 登入、首次改密碼、登出及停用帳號即時失效；由部署維護者安全建立首位測試管理員。
 - [ ] `admin` 建立、重設、停用服事者帳號；禁止停用最後一位有效管理員。
 - [ ] `staff` 與 `admin` 查詢及維護名單、作廢登記（須填原因）、更新匯入狀態、查看統計與匯出 CSV。
-- [ ] `admin` 管理活動、詳細時間表、區、截止時間及查看 audit。
+- [ ] `admin` 管理活動、詳細時間表、區與截止時間；活動可用「調整排序」拖曳 ☰ 或方向鍵排序，按「完成排序」一次儲存。
 - [ ] 取消公開活動前提示受影響的登記人數（[系統架構規劃](系統架構規劃.md) 第 4 節）；目前尚未實作。
 - [ ] 公開前驗證匿名、未授權、停用帳號、`staff`、`admin` 的允許及拒絕案例；帳號與驗收資料不跨測試及正式專案共用。
 

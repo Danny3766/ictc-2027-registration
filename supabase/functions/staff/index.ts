@@ -211,17 +211,22 @@ export async function handler(request) {
 
   if (profile.role !== "admin") return response({ error: "沒有操作權限" }, 403);
 
-  if (body.action === "list_audit") {
-    // Password attempt rows exist only for rate limiting; keep them from filling the 100-row view.
-    const { data, error } = await database.from("audit_events")
-      .select("id,actor_type,action,target_type,created_at")
-      .neq("action", "staff.password_verify_attempt")
-      .order("id", { ascending: false }).limit(100);
-    if (error) {
-      console.error("Failed to list audit events", error);
-      return response({ error: "稽核紀錄載入失敗" }, 503);
+  if (body.action === "reorder_activities") {
+    const ids = body.activity_ids;
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500
+      || !ids.every((id) => Number.isSafeInteger(id) && id > 0) || new Set(ids).size !== ids.length) {
+      return response({ error: "INVALID_REQUEST" }, 400);
     }
-    return response({ events: data });
+    const { error } = await database.rpc("staff_reorder_activities", {
+      p_actor: profile.auth_user_id, p_activity_ids: ids,
+    });
+    if (error) {
+      if (lostAccess(error)) return lostAccessResponse();
+      if (isInputError(error)) return response({ error: "活動清單已有變動，請重新整理後再排序" }, 409);
+      console.error("Failed to reorder activities", error);
+      return response({ error: "排序儲存失敗" }, 503);
+    }
+    return response({ success: true });
   }
 
   if (body.action === "save_reference") {
