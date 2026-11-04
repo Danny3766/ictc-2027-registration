@@ -76,12 +76,15 @@
         <form id="edit-form" hidden>
           <p id="edit-identity" class="notice"></p>
           <p class="hint">姓名或區需要更正時，請聯絡服事者。</p>
+          <p id="edit-mode-hint" class="hint" hidden>正在修改活動選擇。</p>
           <fieldset>
             <legend>活動選擇</legend>
             <div id="edit-activities"></div>
           </fieldset>
           <div class="actions">
-            <button type="submit">儲存</button>
+            <button id="start-edit" type="button">修改活動選擇</button>
+            <button id="save-edit" type="submit" hidden disabled>儲存修改</button>
+            <button id="cancel-edit" type="button" class="secondary" hidden>取消修改</button>
           </div>
         </form>
         </div>

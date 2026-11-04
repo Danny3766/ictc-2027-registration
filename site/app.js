@@ -3,12 +3,19 @@ const message = document.querySelector("#page-message");
 const registrationForm = document.querySelector("#registration-form");
 const queryForm = document.querySelector("#query-form");
 const editForm = document.querySelector("#edit-form");
+const editActivities = document.querySelector("#edit-activities");
+const editModeHint = document.querySelector("#edit-mode-hint");
+const startEditButton = document.querySelector("#start-edit");
+const saveEditButton = document.querySelector("#save-edit");
+const cancelEditButton = document.querySelector("#cancel-edit");
 const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
 const startedAt = Date.now();
 let pageData;
 // The name and district of the loaded registration; an update sends them back as its lookup key.
 let activeIdentity = null;
 let queriedChoicesBaseline = null;
+let queriedCanChange = false;
+let editMode = false;
 
 if (config?.environment === "test") document.querySelector("#test-banner").hidden = false;
 // The success page keeps its summary across reloads; returning here clears it, so the next
@@ -16,12 +23,16 @@ if (config?.environment === "test") document.querySelector("#test-banner").hidde
 sessionStorage.removeItem("registration_success");
 
 function selectTab(tab) {
+  const current = tabs.find((item) => item.getAttribute("aria-selected") === "true");
+  if (tab !== current && hasUnsavedChanges() && !confirm("確定放棄尚未儲存的修改？")) return false;
+  if (tab !== current && editMode) showConfirmation();
   for (const item of tabs) {
     const selected = item === tab;
     item.setAttribute("aria-selected", String(selected));
     item.tabIndex = selected ? 0 : -1;
     document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
   }
+  return true;
 }
 
 for (const tab of tabs) {
@@ -32,8 +43,7 @@ for (const tab of tabs) {
     const next = event.key === "Home" ? tabs[0]
       : event.key === "End" ? tabs.at(-1)
       : tabs[(tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
-    selectTab(next);
-    next.focus();
+    if (selectTab(next)) next.focus();
   });
 }
 
@@ -83,25 +93,44 @@ async function api(body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || "服務暫時無法使用");
+  if (!response.ok) {
+    const error = new Error(result.error || "服務暫時無法使用");
+    error.status = response.status;
+    throw error;
+  }
   return result;
+}
+
+function activityDetails(activity) {
+    const time = activityTime(activity);
+    return `<strong>${escapeHtml(activity.title)}</strong>
+      ${time ? `<p class="hint">時間：${escapeHtml(time)}</p>` : ""}
+      ${activity.venue ? `<p class="hint">地點：${escapeHtml(activity.venue)}</p>` : ""}
+      ${activity.address ? `<p class="hint">地址：${escapeHtml(activity.address)}</p>` : ""}
+      ${activity.fee_amount != null ? `<p class="hint">規劃費用：NT$${escapeHtml(activity.fee_amount)}／人</p>` : ""}
+      ${activity.description ? `<p class="hint">${escapeHtml(activity.description)}</p>` : ""}`;
 }
 
 function activityFields(activities, values = new Map()) {
   return activities.map((activity) => {
     const selected = values.get(activity.id);
-    const time = activityTime(activity);
     return `<div class="activity">
-      <strong>${escapeHtml(activity.title)}</strong>
-      ${time ? `<p class="hint">時間：${escapeHtml(time)}</p>` : ""}
-      ${activity.venue ? `<p class="hint">地點：${escapeHtml(activity.venue)}</p>` : ""}
-      ${activity.address ? `<p class="hint">地址：${escapeHtml(activity.address)}</p>` : ""}
-      ${activity.fee_amount != null ? `<p class="hint">規劃費用：NT$${escapeHtml(activity.fee_amount)}／人</p>` : ""}
-      ${activity.description ? `<p class="hint">${escapeHtml(activity.description)}</p>` : ""}
+      ${activityDetails(activity)}
       <div class="activity-options">
         <label><input type="radio" name="activity_${activity.id}" value="true" ${selected === true ? "checked" : ""} required>參加</label>
         <label><input type="radio" name="activity_${activity.id}" value="false" ${selected === false ? "checked" : ""} required>不參加</label>
       </div>
+    </div>`;
+  }).join("");
+}
+
+function activitySummaryFields(activities, values) {
+  return activities.map((activity) => {
+    const selected = values.get(activity.id);
+    const status = selected === true ? "參加" : selected === false ? "不參加" : "未回覆";
+    return `<div class="activity">
+      ${activityDetails(activity)}
+      <p class="activity-status">登記狀態：${status}</p>
     </div>`;
   }).join("");
 }
@@ -159,6 +188,52 @@ function sortedChoices(choices) {
   return choices
     .map((choice) => ({ activity_id: Number(choice.activity_id), attending: choice.attending }))
     .sort((left, right) => left.activity_id - right.activity_id);
+}
+
+function choicesMap(choices) {
+  return new Map(choices.map((choice) => [Number(choice.activity_id), choice.attending]));
+}
+
+function currentEditChoices() {
+  const data = new FormData(editForm);
+  return sortedChoices(pageData.activities.map((activity) => {
+    const value = data.get(`activity_${activity.id}`);
+    return { activity_id: activity.id, attending: value === null ? null : value === "true" };
+  }));
+}
+
+function hasUnsavedChanges() {
+  return editMode && queriedChoicesBaseline
+    && JSON.stringify(currentEditChoices()) !== JSON.stringify(queriedChoicesBaseline);
+}
+
+function updateSaveState() {
+  const choices = currentEditChoices();
+  const complete = choices.every((choice) => choice.attending !== null);
+  saveEditButton.disabled = !complete
+    || JSON.stringify(choices) === JSON.stringify(queriedChoicesBaseline);
+}
+
+function showConfirmation() {
+  editMode = false;
+  editActivities.innerHTML = activitySummaryFields(pageData.activities, choicesMap(queriedChoicesBaseline ?? []));
+  editModeHint.hidden = true;
+  startEditButton.hidden = !queriedCanChange;
+  startEditButton.disabled = false;
+  saveEditButton.hidden = true;
+  cancelEditButton.hidden = true;
+}
+
+function beginEditing() {
+  if (!queriedCanChange || !queriedChoicesBaseline) return;
+  editMode = true;
+  editActivities.innerHTML = activityFields(pageData.activities, choicesMap(queriedChoicesBaseline));
+  editModeHint.hidden = false;
+  startEditButton.hidden = true;
+  saveEditButton.hidden = false;
+  cancelEditButton.hidden = false;
+  updateSaveState();
+  editActivities.querySelector("input")?.focus();
 }
 
 function districtName(id) {
@@ -224,22 +299,26 @@ registrationForm.addEventListener("submit", async (event) => {
 
 queryForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (hasUnsavedChanges() && !confirm("確定放棄尚未儲存的修改？")) return;
   setBusy(queryForm, true);
   editForm.hidden = true;
   activeIdentity = null;
   queriedChoicesBaseline = null;
+  queriedCanChange = false;
+  editMode = false;
   try {
     const data = new FormData(queryForm);
     const identity = { full_name: String(data.get("full_name")).trim(), district_id: Number(data.get("district_id")) };
     const registration = await api({ action: "query", ...identity });
     document.querySelector("#edit-identity").textContent = `${registration.full_name}｜${districtName(registration.district_id)}`;
-    const values = new Map(registration.choices.map((choice) => [choice.activity_id, choice.attending]));
-    document.querySelector("#edit-activities").innerHTML = activityFields(pageData.activities, values);
     activeIdentity = identity;
-    queriedChoicesBaseline = sortedChoices(registration.choices.filter((choice) => choice.attending !== null));
+    queriedChoicesBaseline = sortedChoices(registration.choices);
+    queriedCanChange = registration.can_change;
     editForm.hidden = false;
-    editForm.querySelectorAll("input, select, button").forEach((control) => control.disabled = !registration.can_change);
-    showMessage(registration.can_change ? "已載入登記資料。" : "登記已截止，資料只能查看。");
+    showConfirmation();
+    showMessage(registration.can_change
+      ? "以下為目前登記內容。"
+      : "目前只能查看，無法修改活動選擇。");
   } catch (error) {
     editForm.hidden = true;
     showMessage(error.message, true);
@@ -254,27 +333,40 @@ editForm.addEventListener("submit", async (event) => {
     showMessage("請先查詢登記資料。", true);
     return;
   }
-  let choices;
-  try {
-    choices = sortedChoices(choicesFrom(editForm));
-  } catch (error) {
-    showMessage(error.message, true);
-    return;
-  }
-  if (JSON.stringify(choices) === JSON.stringify(queriedChoicesBaseline)) {
-    showMessage("目前內容沒有變更。");
-    return;
-  }
+  if (!editMode) return;
+  const choices = currentEditChoices();
+  if (choices.some((choice) => choice.attending === null)) return showMessage("請回答每一項活動", true);
+  if (!hasUnsavedChanges()) return;
   setBusy(editForm, true);
   try {
     await api({ action: "update", ...activeIdentity, choices });
     queriedChoicesBaseline = choices;
-    showMessage("登記資料已儲存。");
+    showConfirmation();
+    showMessage("修改已儲存，以下為目前登記內容。");
   } catch (error) {
+    if (error.status === 409 || error.message === "查詢功能暫停中，請稍後再試") {
+      queriedCanChange = false;
+      showConfirmation();
+    }
     showMessage(error.message, true);
   } finally {
     setBusy(editForm, false);
+    if (editMode) updateSaveState();
   }
+});
+
+startEditButton.addEventListener("click", beginEditing);
+editActivities.addEventListener("change", () => { if (editMode) updateSaveState(); });
+cancelEditButton.addEventListener("click", () => {
+  if (hasUnsavedChanges() && !confirm("確定放棄尚未儲存的修改？")) return;
+  showConfirmation();
+  showMessage("以下為目前登記內容。");
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (!hasUnsavedChanges()) return;
+  event.preventDefault();
+  event.returnValue = "";
 });
 
 loadPage();

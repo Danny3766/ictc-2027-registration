@@ -55,10 +55,10 @@ test("closed registration remains queryable by name and district and disables ed
   await expect(page.locator("#edit-identity")).toHaveText("測試登記｜測試區");
   await expect(page.locator('#edit-form input[name="full_name"]')).toHaveCount(0);
   await expect(page.locator("#edit-form select")).toHaveCount(0);
-  await expect(page.locator("#edit-form button")).toHaveCount(1);
-  for (const control of await page.locator("#edit-form input, #edit-form button").all()) {
-    await expect(control).toBeDisabled();
-  }
+  await expect(page.locator("#edit-form input")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "修改活動選擇" })).toBeHidden();
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
+  await expect(page.locator("#page-message")).toHaveText("目前只能查看，無法修改活動選擇。");
   expect(bodies).toEqual([{ action: "query", full_name: "測試登記", district_id: 1 }]);
   await expectEqualIdentityColumns(page.locator("#query-form .identity-fields"));
 
@@ -81,7 +81,7 @@ test("a query that finds nothing shows the server message", async ({ page }) => 
   await expect(page.locator("#edit-form")).toBeHidden();
 });
 
-test("save sends only choices with the queried name and district, and skips unchanged choices", async ({ page }) => {
+test("query is read-only until editing and returns to confirmation after saving", async ({ page }) => {
   const requests = [];
   await page.route("**/functions/v1/registration", async (route) => {
     const request = route.request();
@@ -94,24 +94,126 @@ test("save sends only choices with the queried name and district, and skips unch
 
   await page.goto("/");
   await query(page);
+  await expect(page.locator("#page-message")).toHaveText("以下為目前登記內容。");
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
+  await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
+  await page.getByRole("button", { name: "修改活動選擇" }).click();
   const attending = page.locator('#edit-form input[name="activity_1"][value="true"]');
   const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
+  const save = page.getByRole("button", { name: "儲存修改" });
+  await expect(save).toBeDisabled();
   await notAttending.check();
+  await expect(save).toBeEnabled();
   await attending.check();
-  await page.getByRole("button", { name: "儲存", exact: true }).click();
-  await expect(page.locator("#page-message")).toHaveText("目前內容沒有變更。");
+  await expect(save).toBeDisabled();
   expect(requests.map(({ action }) => action)).toEqual(["query"]);
 
   await notAttending.check();
-  await page.getByRole("button", { name: "儲存", exact: true }).click();
-  await expect(page.locator("#page-message")).toHaveText("登記資料已儲存。");
+  await save.click();
+  await expect(page.locator("#page-message")).toHaveText("修改已儲存，以下為目前登記內容。");
   expect(requests[1]).toEqual({
     action: "update", full_name: "測試登記", district_id: 1, choices: [{ activity_id: 1, attending: false }],
   });
-
-  await page.getByRole("button", { name: "儲存", exact: true }).click();
-  await expect(page.locator("#page-message")).toHaveText("目前內容沒有變更。");
+  await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：不參加");
+  await expect(page.getByRole("button", { name: "修改活動選擇" })).toBeVisible();
   expect(requests.map(({ action }) => action)).toEqual(["query", "update"]);
+});
+
+test("cancel, tab changes, and another query protect unsaved edits", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: openPage() });
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    return route.fulfill({ json: queried(true) });
+  });
+
+  await page.goto("/");
+  await query(page);
+  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
+
+  page.once("dialog", async (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "取消修改" }).click();
+  await expect(page.locator('#edit-form input[name="activity_1"][value="false"]')).toBeChecked();
+
+  page.once("dialog", async (dialog) => dialog.dismiss());
+  await page.getByRole("tab", { name: "登記參加" }).click();
+  await expect(page.getByRole("tab", { name: "查詢或修改登記" })).toHaveAttribute("aria-selected", "true");
+
+  await page.locator('#query-form input[name="full_name"]').fill("另一個人");
+  page.once("dialog", async (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "查詢" }).click();
+  expect(requests).toHaveLength(1);
+  await expect(page.locator('#edit-form input[name="activity_1"][value="false"]')).toBeChecked();
+  expect(await page.evaluate(() => window.dispatchEvent(new Event("beforeunload", { cancelable: true })))).toBe(false);
+
+  page.once("dialog", async (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "取消修改" }).click();
+  await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
+
+  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
+  page.once("dialog", async (dialog) => dialog.accept());
+  await page.getByRole("tab", { name: "登記參加" }).click();
+  await expect(page.getByRole("tab", { name: "登記參加" })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
+
+  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
+  page.once("dialog", async (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "查詢" }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
+});
+
+test("an unanswered activity stays explicit until the registrant chooses", async ({ page }) => {
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: openPage() });
+    return route.fulfill({ json: {
+      ...queried(true), choices: [{ activity_id: 1, title: "測試活動", attending: null }],
+    } });
+  });
+
+  await page.goto("/");
+  await query(page);
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：未回覆");
+  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await expect(page.getByRole("button", { name: "儲存修改" })).toBeDisabled();
+  await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
+  await expect(page.getByRole("button", { name: "儲存修改" })).toBeEnabled();
+});
+
+test("temporary save errors keep edits while a closed registration returns to confirmation", async ({ page }) => {
+  let updateCount = 0;
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: openPage() });
+    const body = route.request().postDataJSON();
+    if (body.action === "query") return route.fulfill({ json: queried(true) });
+    updateCount += 1;
+    return updateCount === 1
+      ? route.fulfill({ status: 503, json: { error: "服務暫時無法使用" } })
+      : route.fulfill({ status: 409, json: { error: "登記已截止，資料只能查看" } });
+  });
+
+  await page.goto("/");
+  await query(page);
+  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
+  await notAttending.check();
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("服務暫時無法使用");
+  await expect(notAttending).toBeChecked();
+  await expect(page.getByRole("button", { name: "儲存修改" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("登記已截止，資料只能查看");
+  await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
+  await expect(page.getByRole("button", { name: "修改活動選擇" })).toBeHidden();
 });
 
 test("starting a new query prevents the previous form from being saved", async ({ page }) => {

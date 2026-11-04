@@ -39,6 +39,8 @@ fieldset { padding: 0; border: 0; }
 .activity-options { display: flex; gap: 1rem; }
 .activity-options label { display: flex; align-items: center; gap: .35rem; margin: .4rem 0; }
 .activity-options input { width: auto; min-height: auto; margin: 0; }
+.activity-status { display: inline-block; margin: .4rem 0; padding: .35rem .6rem; border-radius: .4rem; color: #33443d; background: #eef3f0; font-weight: 700; }
+#save-edit:disabled { cursor: not-allowed; }
 .hint { color: #59655f; font-size: .95rem; }
 .actions { display: grid; gap: .75rem; }
 .honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
