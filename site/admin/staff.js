@@ -167,6 +167,26 @@ function taipeiTimestamp(value) {
   return value ? `${value}:00+08:00` : null;
 }
 
+function activityDateTimeFields(value, hasTime) {
+  const local = taipeiInput(value);
+  return {
+    date: local.slice(0, 10),
+    time: local && hasTime !== false ? local.slice(11, 16) : "",
+  };
+}
+
+function activityTimestamp(date, time) {
+  return date ? `${date}T${time || "00:00"}:00+08:00` : null;
+}
+
+function activityTimeDisplay(value, hasTime) {
+  if (!value) return "";
+  if (hasTime !== false) return shortTime(value);
+  const local = taipeiInput(value);
+  const [, month, day] = local.slice(0, 10).split("-").map(Number);
+  return `${month}/${day}`;
+}
+
 function editButton(row, callback) {
   const action = cell(row, "");
   const button = document.createElement("button");
@@ -204,7 +224,11 @@ function setEditing(form, item) {
 function renderReferenceRows(only) {
   for (const [table, items, columns, form, transform] of [
     ["#activity-rows", reference.activities, ["title", "category", "starts_at", "is_published"], "#activity-form",
-      (item) => ({ ...item, starts_at: taipeiInput(item.starts_at), ends_at: taipeiInput(item.ends_at) })],
+      (item) => {
+        const start = activityDateTimeFields(item.starts_at, item.starts_at_has_time);
+        const end = activityDateTimeFields(item.ends_at, item.ends_at_has_time);
+        return { ...item, starts_on: start.date, starts_time: start.time, ends_on: end.date, ends_time: end.time };
+      }],
     ["#program-rows", reference.program, ["event_date", "start_time", "title", "is_visible"], "#program-form",
       (item) => ({ ...item, start_time: item.start_time?.slice(0, 5), end_time: item.end_time?.slice(0, 5) })],
   ]) {
@@ -213,7 +237,12 @@ function renderReferenceRows(only) {
     rows.replaceChildren();
     for (const item of items) {
       const row = document.createElement("tr");
-      for (const column of columns) cell(row, displayValue(column, item[column]));
+      for (const column of columns) {
+        const value = table === "#activity-rows" && column === "starts_at"
+          ? activityTimeDisplay(item.starts_at, item.starts_at_has_time)
+          : displayValue(column, item[column]);
+        cell(row, value);
+      }
       editButton(row, () => {
         fillForm(document.querySelector(form), transform(item));
         setEditing(document.querySelector(form), item);
@@ -258,8 +287,14 @@ async function saveReference(event, kind) {
   }
   if (kind === "settings") data.registration_deadline_at = taipeiTimestamp(data.registration_deadline_at);
   if (kind === "activity") {
-    data.starts_at = taipeiTimestamp(data.starts_at);
-    data.ends_at = taipeiTimestamp(data.ends_at);
+    if ((data.starts_time && !data.starts_on) || (data.ends_time && !data.ends_on)) {
+      return showMessage("設定活動時間前，請先選擇對應日期。", true);
+    }
+    data.starts_at = activityTimestamp(data.starts_on, data.starts_time);
+    data.starts_at_has_time = Boolean(data.starts_time);
+    data.ends_at = activityTimestamp(data.ends_on, data.ends_time);
+    data.ends_at_has_time = Boolean(data.ends_time);
+    for (const name of ["starts_on", "starts_time", "ends_on", "ends_time"]) delete data[name];
   }
   // An activity save would change the list being reordered; other saves leave the drag order alone.
   if (kind === "activity" && activitySection.classList.contains("reordering")) {

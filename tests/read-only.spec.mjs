@@ -165,8 +165,12 @@ test("registration tabs and success page show what was submitted", async ({ page
   await page.route("**/functions/v1/registration", async (route) => {
     if (route.request().method() === "GET") {
       return route.fulfill({ json: { ...openPage(), activities: [
-        { id: 1, title: "測試活動", description: null },
-        { id: 2, title: "週六午餐", venue: "測試餐廳", address: "測試地址", fee_amount: 250, description: "用餐時間待確認" },
+        { id: 1, title: "測試活動", starts_at: "2027-02-21T00:00:00+08:00", starts_at_has_time: false, description: null },
+        {
+          id: 2, title: "週六午餐", starts_at: "2027-02-20T12:30:00+08:00", starts_at_has_time: true,
+          ends_at: "2027-02-20T14:00:00+08:00", ends_at_has_time: true,
+          venue: "測試餐廳", address: "測試地址", fee_amount: 250, description: "用餐時間待確認",
+        },
       ] } });
     }
     submitted = route.request().postDataJSON();
@@ -181,6 +185,9 @@ test("registration tabs and success page show what was submitted", async ({ page
   await expect(page.locator("#query-form")).toBeVisible();
   await expect(page.locator('#query-form select[name="district_id"] option')).toHaveCount(3);
   await page.getByRole("tab", { name: "登記參加" }).click();
+  await expect(page.locator("#activities .activity").first()).toContainText("時間：2/21");
+  await expect(page.locator("#activities .activity").first()).not.toContainText("00:00");
+  await expect(page.locator("#activities .activity").nth(1)).toContainText("時間：2/20 12:30–14:00");
   await expect(page.locator("#activities")).toContainText("規劃費用：NT$250／人");
   await page.locator('#registration-form input[name="full_name"]').fill(" David Wang ");
   await page.locator('#registration-form select[name="district_id"]').selectOption("2");

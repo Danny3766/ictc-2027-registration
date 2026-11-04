@@ -31,7 +31,7 @@
 - [ ] 確認測試站連到開發資料環境並顯示測試站提示；正式環境設定不可混用。
 - [ ] 在 Dashboard 確認 Edge Function 的 Verify JWT：`staff` 開啟、`registration` 關閉。Dashboard 部署不讀取 `supabase/config.toml`，兩邊設定須一致。
 - [ ] 套用 `202611040001_staff_backoffice_and_name_lookup.sql` 前，清空測試站的登記資料（`registrations`、`registration_choices`），並通知試填者以新流程重填；試填回饋先另行保存。
-- [ ] 測試站已套用 `202611030001` 至 `202611030004`；接著依序套用 `202611040001_staff_backoffice_and_name_lookup.sql`、`202611040002_activity_reorder.sql`，部署 `registration` 與 `staff` Edge Function。
+- [ ] 測試站已套用 `202611030001` 至 `202611030004`；接著依序套用 `202611040001_staff_backoffice_and_name_lookup.sql`、`202611040002_activity_reorder.sql`、`202611040003_activity_time_precision.sql`，部署 `registration` 與 `staff` Edge Function。
 - [ ] 在 Edge Function secrets 新增至少 32 字元的 `RATE_LIMIT_KEY`；移除已不使用的 `QUERY_CODE_PEPPER`。
 - [ ] 在本機與測試站檢查活動、時間表、登記、姓名與區查詢、修改活動選擇及完成頁摘要。
 

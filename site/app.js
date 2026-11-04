@@ -44,6 +44,37 @@ function showMessage(text, error = false) {
   message.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
+function taipeiDateTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return {
+    day: `${parts.year}-${parts.month}-${parts.day}`,
+    date: `${Number(parts.month)}/${Number(parts.day)}`,
+    time: `${parts.hour}:${parts.minute}`,
+  };
+}
+
+function activityTime(activity) {
+  const start = taipeiDateTime(activity.starts_at);
+  if (!start) return "";
+  const startText = activity.starts_at_has_time === false ? start.date : `${start.date} ${start.time}`;
+  const end = taipeiDateTime(activity.ends_at);
+  if (!end) return startText;
+  if (end.day === start.day && activity.starts_at_has_time === false && activity.ends_at_has_time === false) {
+    return startText;
+  }
+  const bothTimesOnSameDay = end.day === start.day
+    && activity.starts_at_has_time !== false && activity.ends_at_has_time !== false;
+  const endText = bothTimesOnSameDay ? end.time
+    : (activity.ends_at_has_time === false ? end.date : `${end.date} ${end.time}`);
+  return `${startText}–${endText}`;
+}
+
 async function api(body) {
   if (!config?.supabaseUrl || !config?.publishableKey) throw new Error("網站尚未設定 Supabase 公開連線資訊");
   const response = await fetch(`${config.supabaseUrl}/functions/v1/registration`, {
@@ -59,8 +90,10 @@ async function api(body) {
 function activityFields(activities, values = new Map()) {
   return activities.map((activity) => {
     const selected = values.get(activity.id);
+    const time = activityTime(activity);
     return `<div class="activity">
       <strong>${escapeHtml(activity.title)}</strong>
+      ${time ? `<p class="hint">時間：${escapeHtml(time)}</p>` : ""}
       ${activity.venue ? `<p class="hint">地點：${escapeHtml(activity.venue)}</p>` : ""}
       ${activity.address ? `<p class="hint">地址：${escapeHtml(activity.address)}</p>` : ""}
       ${activity.fee_amount != null ? `<p class="hint">規劃費用：NT$${escapeHtml(activity.fee_amount)}／人</p>` : ""}

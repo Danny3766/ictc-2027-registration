@@ -138,8 +138,10 @@
           <form id="activity-form" class="staff-form">
             <label>類型<select name="category"><option value="meeting">聚會</option><option value="meal">用餐</option><option value="other">其他</option></select></label>
             <label>名稱<input name="title" maxlength="200" required /></label>
-            <label>開始時間（台灣時間）<input name="starts_at" type="datetime-local" /></label>
-            <label>結束時間（台灣時間）<input name="ends_at" type="datetime-local" /></label>
+            <label>開始日期<input name="starts_on" type="date" /></label>
+            <label>開始時間（選填；台灣時間）<input name="starts_time" type="time" /></label>
+            <label>結束日期（選填）<input name="ends_on" type="date" /></label>
+            <label>結束時間（選填；台灣時間）<input name="ends_time" type="time" /></label>
             <label>地點<input name="venue" maxlength="200" /></label>
             <label>地址<input name="address" maxlength="300" /></label>
             <label>地圖連結<input name="map_url" type="url" maxlength="1000" /></label>
