@@ -6,10 +6,14 @@ const editForm = document.querySelector("#edit-form");
 const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
 const startedAt = Date.now();
 let pageData;
-let activeQueryCode = "";
-let queriedRegistrationBaseline = null;
+// The name and district of the loaded registration; an update sends them back as its lookup key.
+let activeIdentity = null;
+let queriedChoicesBaseline = null;
 
 if (config?.environment === "test") document.querySelector("#test-banner").hidden = false;
+// The success page keeps its summary across reloads; returning here clears it, so the next
+// person on a shared device starts without the previous person's details.
+sessionStorage.removeItem("registration_success");
 
 function selectTab(tab) {
   for (const item of tabs) {
@@ -102,9 +106,9 @@ function showProgram(program) {
   }).join("");
 }
 
-function districtOptions(selected = "") {
-  return `<option value="">請選擇</option>${pageData.districts.map((district) =>
-    `<option value="${district.id}" ${String(district.id) === String(selected) ? "selected" : ""}>${escapeHtml(district.name)}</option>`
+function districtOptions(districts) {
+  return `<option value="">請選擇</option>${districts.map((district) =>
+    `<option value="${district.id}">${escapeHtml(district.name)}</option>`
   ).join("")}`;
 }
 
@@ -118,26 +122,14 @@ function choicesFrom(form) {
   return choices;
 }
 
-function normalizeRegistration(registration) {
-  return {
-    full_name: String(registration.full_name ?? "").trim(),
-    district_id: Number(registration.district_id),
-    choices: registration.choices
-      .map((choice) => ({
-        activity_id: Number(choice.activity_id),
-        attending: choice.attending,
-      }))
-      .sort((left, right) => left.activity_id - right.activity_id),
-  };
+function sortedChoices(choices) {
+  return choices
+    .map((choice) => ({ activity_id: Number(choice.activity_id), attending: choice.attending }))
+    .sort((left, right) => left.activity_id - right.activity_id);
 }
 
-function registrationFrom(form) {
-  const data = new FormData(form);
-  return normalizeRegistration({
-    full_name: data.get("full_name"),
-    district_id: data.get("district_id"),
-    choices: choicesFrom(form),
-  });
+function districtName(id) {
+  return pageData.districts.find((district) => String(district.id) === String(id))?.name ?? "";
 }
 
 function setBusy(form, busy) {
@@ -150,7 +142,8 @@ async function loadPage() {
     document.querySelector("#event-name").textContent = pageData.settings.event_name;
     document.querySelector("#event-meta").textContent = [pageData.settings.venue, pageData.settings.address].filter(Boolean).join("｜");
     showProgram(pageData.program);
-    registrationForm.elements.district_id.innerHTML = districtOptions();
+    registrationForm.elements.district_id.innerHTML = districtOptions(pageData.districts);
+    queryForm.elements.district_id.innerHTML = districtOptions(pageData.districts);
     document.querySelector("#activities").innerHTML = activityFields(pageData.activities);
     if (!pageData.settings.is_registration_open || pageData.activities.length === 0) {
       registrationForm.querySelector("button[type=submit]").disabled = true;
@@ -168,17 +161,26 @@ registrationForm.addEventListener("submit", async (event) => {
   setBusy(registrationForm, true);
   try {
     const data = new FormData(registrationForm);
-    const result = await api({
+    const choices = choicesFrom(registrationForm);
+    await api({
       action: "create",
       create_request_id: crypto.randomUUID(),
       started_at: startedAt,
       website: data.get("website"),
       full_name: data.get("full_name"),
       district_id: Number(data.get("district_id")),
-      choices: choicesFrom(registrationForm),
+      choices,
       turnstile_token: null,
     });
-    sessionStorage.setItem("registration_success", JSON.stringify(result));
+    // The success page shows what was sent, so the person can check it before leaving.
+    sessionStorage.setItem("registration_success", JSON.stringify({
+      full_name: String(data.get("full_name")).trim(),
+      district: districtName(data.get("district_id")),
+      choices: choices.map((choice) => ({
+        title: pageData.activities.find((activity) => activity.id === choice.activity_id)?.title ?? "",
+        attending: choice.attending,
+      })),
+    }));
     location.assign("./success.html");
   } catch (error) {
     showMessage(error.message, true);
@@ -191,17 +193,17 @@ queryForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   setBusy(queryForm, true);
   editForm.hidden = true;
-  activeQueryCode = "";
-  queriedRegistrationBaseline = null;
+  activeIdentity = null;
+  queriedChoicesBaseline = null;
   try {
-    const queryCode = new FormData(queryForm).get("query_code").toLowerCase().replaceAll(/\s/g, "");
-    const registration = await api({ action: "query", query_code: queryCode });
-    editForm.elements.full_name.value = registration.full_name;
-    editForm.elements.district_id.innerHTML = districtOptions(registration.district_id);
+    const data = new FormData(queryForm);
+    const identity = { full_name: String(data.get("full_name")).trim(), district_id: Number(data.get("district_id")) };
+    const registration = await api({ action: "query", ...identity });
+    document.querySelector("#edit-identity").textContent = `${registration.full_name}｜${districtName(registration.district_id)}`;
     const values = new Map(registration.choices.map((choice) => [choice.activity_id, choice.attending]));
     document.querySelector("#edit-activities").innerHTML = activityFields(pageData.activities, values);
-    activeQueryCode = queryCode;
-    queriedRegistrationBaseline = normalizeRegistration(registration);
+    activeIdentity = identity;
+    queriedChoicesBaseline = sortedChoices(registration.choices.filter((choice) => choice.attending !== null));
     editForm.hidden = false;
     editForm.querySelectorAll("input, select, button").forEach((control) => control.disabled = !registration.can_change);
     showMessage(registration.can_change ? "已載入登記資料。" : "登記已截止，資料只能查看。");
@@ -215,24 +217,25 @@ queryForm.addEventListener("submit", async (event) => {
 
 editForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!activeQueryCode || !queriedRegistrationBaseline) {
+  if (!activeIdentity || !queriedChoicesBaseline) {
     showMessage("請先查詢登記資料。", true);
     return;
   }
-  const registration = registrationFrom(editForm);
-  if (JSON.stringify(registration) === JSON.stringify(queriedRegistrationBaseline)) {
+  let choices;
+  try {
+    choices = sortedChoices(choicesFrom(editForm));
+  } catch (error) {
+    showMessage(error.message, true);
+    return;
+  }
+  if (JSON.stringify(choices) === JSON.stringify(queriedChoicesBaseline)) {
     showMessage("目前內容沒有變更。");
     return;
   }
   setBusy(editForm, true);
   try {
-    await api({
-      action: "update",
-      query_code: activeQueryCode,
-      ...registration,
-    });
-    queriedRegistrationBaseline = registration;
-    editForm.elements.full_name.value = registration.full_name;
+    await api({ action: "update", ...activeIdentity, choices });
+    queriedChoicesBaseline = choices;
     showMessage("登記資料已儲存。");
   } catch (error) {
     showMessage(error.message, true);

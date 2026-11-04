@@ -11,50 +11,56 @@ async function expectEqualIdentityColumns(fields) {
   expect(boxes[1].x).toBeGreaterThan(boxes[0].x);
 }
 
-test("closed registration remains queryable and disables edits", async ({ page }) => {
-  const actions = [];
+const openPage = (open = true) => ({
+  settings: { event_name: "測試活動", venue: "", address: "", is_registration_open: open, registration_deadline_at: null },
+  districts: [{ id: 1, name: "測試區" }, { id: 2, name: "第二區" }],
+  activities: [{ id: 1, title: "測試活動", description: null }],
+  program: [],
+});
+
+const queried = (canChange) => ({
+  full_name: "測試登記", district_id: 1, can_change: canChange,
+  choices: [{ activity_id: 1, title: "測試活動", attending: true }],
+});
+
+async function query(page, name = "測試登記", district = "1") {
+  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
+  await page.locator('#query-form input[name="full_name"]').fill(name);
+  await page.locator('#query-form select[name="district_id"]').selectOption(district);
+  await page.getByRole("button", { name: "查詢" }).click();
+}
+
+test("closed registration remains queryable by name and district and disables edits", async ({ page }) => {
+  const bodies = [];
   await page.route("**/functions/v1/registration", async (route) => {
     const request = route.request();
     if (request.method() === "GET") {
-      return route.fulfill({ json: {
-        settings: { event_name: "測試活動", venue: "", address: "", is_registration_open: false, registration_deadline_at: null },
-        districts: [{ id: 1, name: "測試區" }],
-        activities: [{ id: 1, title: "測試活動", description: null }],
-        program: [
-          { event_date: "2027-02-20", start_time: "12:30:00", end_time: "14:00:00", title: "第一堂聚會", note: null },
-          { event_date: "2027-02-21", start_time: "09:00:00", end_time: null, title: "第四堂聚會", note: null },
-        ],
-      } });
+      return route.fulfill({ json: { ...openPage(false), program: [
+        { event_date: "2027-02-20", start_time: "12:30:00", end_time: "14:00:00", title: "第一堂聚會", note: null },
+        { event_date: "2027-02-21", start_time: "09:00:00", end_time: null, title: "第四堂聚會", note: null },
+      ] } });
     }
-    actions.push(request.postDataJSON().action);
-    return route.fulfill({ json: {
-      full_name: "測試登記", district_id: 1,
-      record_status: "active", can_change: false,
-      choices: [{ activity_id: 1, attending: true }],
-    } });
+    bodies.push(request.postDataJSON());
+    return route.fulfill({ json: queried(false) });
   });
 
   await page.goto("/");
   await expect(page.locator(".program-day")).toHaveCount(2);
   await expect(page.locator(".program-day").first()).toContainText(/2月20日\s*星期六/);
   await expect(page.locator(".program-day").first()).toContainText("12:30–14:00");
-  await expect(page.locator(".program-day").last()).toContainText(/2月21日\s*星期日/);
   await expect(page.locator('#registration-form button[type="submit"]')).toBeDisabled();
-  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
-  await page.locator('#query-form input[name="query_code"]').fill("zzzzzzzz");
-  await page.locator('#query-form button[type="submit"]').click();
+  await query(page, "  測試登記  ");
 
   await expect(page.locator("#edit-form")).toBeVisible();
-  await expect(page.getByText("38-0001")).toHaveCount(0);
-  await expect(page.locator('#edit-form input[name="full_name"]')).toHaveValue("測試登記");
-  await expect(page.getByRole("button", { name: "儲存", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /取消登記|恢復登記/ })).toHaveCount(0);
+  await expect(page.locator("#edit-identity")).toHaveText("測試登記｜測試區");
+  await expect(page.locator('#edit-form input[name="full_name"]')).toHaveCount(0);
+  await expect(page.locator("#edit-form select")).toHaveCount(0);
   await expect(page.locator("#edit-form button")).toHaveCount(1);
-  await expectEqualIdentityColumns(page.locator("#edit-form .identity-fields"));
-  for (const control of await page.locator("#edit-form input, #edit-form select, #edit-form button").all()) {
+  for (const control of await page.locator("#edit-form input, #edit-form button").all()) {
     await expect(control).toBeDisabled();
   }
-  expect(actions).toEqual(["query"]);
+  expect(bodies).toEqual([{ action: "query", full_name: "測試登記", district_id: 1 }]);
+  await expectEqualIdentityColumns(page.locator("#query-form .identity-fields"));
 
   for (const width of [360, 768, 1366, 1920]) {
     await page.setViewportSize({ width, height: 900 });
@@ -64,50 +70,44 @@ test("closed registration remains queryable and disables edits", async ({ page }
   }
 });
 
-test("save skips unchanged data and resets the comparison baseline", async ({ page }) => {
+test("a query that finds nothing shows the server message", async ({ page }) => {
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: openPage() });
+    return route.fulfill({ status: 404, json: { error: "查無登記資料，請確認姓名寫法與區和登記時相同" } });
+  });
+  await page.goto("/");
+  await query(page, "不存在");
+  await expect(page.locator("#page-message")).toHaveText("查無登記資料，請確認姓名寫法與區和登記時相同");
+  await expect(page.locator("#edit-form")).toBeHidden();
+});
+
+test("save sends only choices with the queried name and district, and skips unchanged choices", async ({ page }) => {
   const requests = [];
   await page.route("**/functions/v1/registration", async (route) => {
     const request = route.request();
-    if (request.method() === "GET") {
-      return route.fulfill({ json: {
-        settings: { event_name: "測試活動", venue: "", address: "", is_registration_open: true },
-        districts: [{ id: 1, name: "測試區" }],
-        activities: [{ id: 1, title: "測試活動", description: null }],
-        program: [],
-      } });
-    }
+    if (request.method() === "GET") return route.fulfill({ json: openPage() });
     const body = request.postDataJSON();
     requests.push(body);
-    if (body.action === "query") {
-      return route.fulfill({ json: {
-        full_name: "測試登記", district_id: 1,
-        record_status: "active", can_change: true,
-        choices: [{ activity_id: 1, attending: true }],
-      } });
-    }
-    return route.fulfill({ json: { ok: true } });
+    if (body.action === "query") return route.fulfill({ json: queried(true) });
+    return route.fulfill({ json: { success: true } });
   });
 
   await page.goto("/");
-  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
-  await page.locator('#query-form input[name="query_code"]').fill("zzzzzzzz");
-  await page.getByRole("button", { name: "查詢" }).click();
-
-  const name = page.locator('#edit-form input[name="full_name"]');
+  await query(page);
   const attending = page.locator('#edit-form input[name="activity_1"][value="true"]');
-  await name.fill("暫時修改");
-  await name.fill("  測試登記  ");
-  await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
+  const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
+  await notAttending.check();
   await attending.check();
   await page.getByRole("button", { name: "儲存", exact: true }).click();
   await expect(page.locator("#page-message")).toHaveText("目前內容沒有變更。");
   expect(requests.map(({ action }) => action)).toEqual(["query"]);
 
-  await name.fill("  測試登記修改  ");
+  await notAttending.check();
   await page.getByRole("button", { name: "儲存", exact: true }).click();
   await expect(page.locator("#page-message")).toHaveText("登記資料已儲存。");
-  expect(requests.map(({ action }) => action)).toEqual(["query", "update"]);
-  expect(requests[1].full_name).toBe("測試登記修改");
+  expect(requests[1]).toEqual({
+    action: "update", full_name: "測試登記", district_id: 1, choices: [{ activity_id: 1, attending: false }],
+  });
 
   await page.getByRole("button", { name: "儲存", exact: true }).click();
   await expect(page.locator("#page-message")).toHaveText("目前內容沒有變更。");
@@ -120,36 +120,22 @@ test("starting a new query prevents the previous form from being saved", async (
   let queryCount = 0;
   await page.route("**/functions/v1/registration", async (route) => {
     const request = route.request();
-    if (request.method() === "GET") {
-      return route.fulfill({ json: {
-        settings: { event_name: "測試活動", venue: "", address: "", is_registration_open: true },
-        districts: [{ id: 1, name: "測試區" }],
-        activities: [{ id: 1, title: "測試活動", description: null }],
-        program: [],
-      } });
-    }
+    if (request.method() === "GET") return route.fulfill({ json: openPage() });
     const body = request.postDataJSON();
     requests.push(body);
     if (body.action === "query") {
       queryCount += 1;
       if (queryCount === 2) await new Promise((resolve) => { releasePendingQuery = resolve; });
-      return route.fulfill({ json: {
-        full_name: "測試登記", district_id: 1,
-        record_status: "active", can_change: true,
-        choices: [{ activity_id: 1, attending: true }],
-      } });
+      return route.fulfill({ json: queried(true) });
     }
-    return route.fulfill({ json: { ok: true } });
+    return route.fulfill({ json: { success: true } });
   });
 
   await page.goto("/");
-  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
-  const queryCode = page.locator('#query-form input[name="query_code"]');
-  await queryCode.fill("zzzzzzzz");
-  await page.getByRole("button", { name: "查詢" }).click();
+  await query(page);
   await expect(page.locator("#edit-form")).toBeVisible();
 
-  await queryCode.fill("yyyyyyyy");
+  await page.locator('#query-form input[name="full_name"]').fill("另一個人");
   await page.getByRole("button", { name: "查詢" }).click();
   await expect(page.locator("#edit-form")).toBeHidden();
   await page.locator("#edit-form").dispatchEvent("submit");
@@ -160,28 +146,31 @@ test("starting a new query prevents the previous form from being saved", async (
   await expect(page.locator("#edit-form")).toBeVisible();
 });
 
-test("registration tabs and success page show only the query code", async ({ page }) => {
-  let submittedChoices;
+test("a name and district already registered is refused with the server message", async ({ page }) => {
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: openPage() });
+    return route.fulfill({ status: 409, json: { error: "此姓名與區已經登記過，如需查看或修改，請使用「查詢或修改登記」" } });
+  });
+  await page.goto("/");
+  await page.locator('#registration-form input[name="full_name"]').fill("測試登記");
+  await page.locator('#registration-form select[name="district_id"]').selectOption("1");
+  await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page.locator("#page-message")).toHaveText("此姓名與區已經登記過，如需查看或修改，請使用「查詢或修改登記」");
+  await expect(page).not.toHaveURL(/success\.html$/);
+});
+
+test("registration tabs and success page show what was submitted", async ({ page }) => {
+  let submitted;
   await page.route("**/functions/v1/registration", async (route) => {
     if (route.request().method() === "GET") {
-      return route.fulfill({ json: {
-        settings: { event_name: "測試活動", venue: "", address: "", is_registration_open: true },
-        districts: [{ id: 1, name: "測試區" }],
-        activities: [
-          { id: 1, title: "測試活動", description: null },
-          { id: 2, title: "週六午餐", venue: "京星港式飲茶 PART1", address: "台北市敦化南路一段 216 號 2 樓", fee_amount: 250, description: "用餐時間待確認" },
-        ],
-        program: [],
-      } });
+      return route.fulfill({ json: { ...openPage(), activities: [
+        { id: 1, title: "測試活動", description: null },
+        { id: 2, title: "週六午餐", venue: "測試餐廳", address: "測試地址", fee_amount: 250, description: "用餐時間待確認" },
+      ] } });
     }
-    submittedChoices = route.request().postDataJSON().choices;
-    return route.fulfill({ status: 201, json: { query_code: "a2b3c4d5" } });
-  });
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText: async (text) => { window.copiedQueryCode = text; } },
-    });
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { success: true } });
   });
 
   await page.goto("/");
@@ -190,26 +179,30 @@ test("registration tabs and success page show only the query code", async ({ pag
   await expect(page.locator("#query-form")).toBeHidden();
   await page.getByRole("tab", { name: "查詢或修改登記" }).click();
   await expect(page.locator("#query-form")).toBeVisible();
-  await expect(page.getByLabel(/請輸入查詢碼/)).toHaveAttribute("minlength", "8");
+  await expect(page.locator('#query-form select[name="district_id"] option')).toHaveCount(3);
   await page.getByRole("tab", { name: "登記參加" }).click();
-  await expect(page.locator("#activities")).toContainText("京星港式飲茶 PART1");
   await expect(page.locator("#activities")).toContainText("規劃費用：NT$250／人");
-  await page.locator('#registration-form input[name="full_name"]').fill("測試登記");
-  await page.locator('#registration-form select[name="district_id"]').selectOption("1");
-  await page.locator('#registration-form input[name="activity_1"][value="false"]').check();
+  await page.locator('#registration-form input[name="full_name"]').fill(" David Wang ");
+  await page.locator('#registration-form select[name="district_id"]').selectOption("2");
+  await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
   await page.locator('#registration-form input[name="activity_2"][value="false"]').check();
   await page.getByRole("button", { name: "送出登記" }).click();
 
   await expect(page).toHaveURL(/success\.html$/);
-  await expect(page.locator("#query-code")).toHaveText("a2b3c4d5");
-  expect(submittedChoices).toEqual([
-    { activity_id: 1, attending: false },
+  expect(submitted.choices).toEqual([
+    { activity_id: 1, attending: true },
     { activity_id: 2, attending: false },
   ]);
-  await expect(page.getByText("流水號")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "複製查詢碼" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /列印|儲存/ })).toHaveCount(0);
-  await page.getByRole("button", { name: "複製查詢碼" }).click();
-  await expect.poll(() => page.evaluate(() => window.copiedQueryCode)).toBe("a2b3c4d5");
-  await page.locator("#saved-confirmation").check();
+  await expect(page.locator("#summary-identity")).toHaveText("David Wang｜第二區");
+  await expect(page.locator("#summary-choices li")).toHaveText(["測試活動：參加", "週六午餐：不參加"]);
+  await expect(page.getByText("查詢碼")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "回登記頁" })).toBeEnabled();
+  // A reload (for example mobile Safari restoring the tab) keeps the summary.
+  await page.reload();
+  await expect(page.locator("#summary-identity")).toHaveText("David Wang｜第二區");
+  // Going back to the form clears it, so the next person on a shared device cannot reopen it.
+  await page.getByRole("link", { name: "回登記頁" }).click();
+  await expect(page.getByRole("button", { name: "送出登記" })).toBeVisible();
+  await page.goto("/success.html");
+  await expect(page).not.toHaveURL(/success\.html$/);
 });

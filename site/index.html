@@ -63,23 +63,19 @@
         </form>
         </div>
         <div id="query-panel" role="tabpanel" aria-labelledby="query-tab" hidden>
-        <form id="query-form" class="query-row">
-          <label
-            >請輸入查詢碼（登記成功後提供的個人查詢碼，共 8 碼英數混合字元）<input
-              name="query_code"
-              minlength="8"
-              maxlength="20"
-              autocapitalize="none"
-              autocomplete="off"
-              required
-          /></label>
+        <form id="query-form">
+          <p class="hint">請輸入登記時的姓名與區；姓名寫法須與登記時相同，大小寫與空白不影響查詢。</p>
+          <div class="identity-fields">
+            <label>姓名<input name="full_name" maxlength="100" autocomplete="name" required /></label>
+            <label>區<select name="district_id" required>
+                <option value="">請選擇</option>
+              </select></label>
+          </div>
           <button type="submit">查詢</button>
         </form>
         <form id="edit-form" hidden>
-          <div class="identity-fields">
-            <label>姓名<input name="full_name" maxlength="100" required /></label>
-            <label>區<select name="district_id" required></select></label>
-          </div>
+          <p id="edit-identity" class="notice"></p>
+          <p class="hint">姓名或區需要更正時，請聯絡服事者。</p>
           <fieldset>
             <legend>活動選擇</legend>
             <div id="edit-activities"></div>
