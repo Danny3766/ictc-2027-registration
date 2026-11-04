@@ -11,6 +11,16 @@ function response(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+// Invalid parameter, bad text and numeric overflow all come from client input.
+function isInputError(error) {
+  return ["22023", "22P02", "22003"].includes(error?.code);
+}
+
+// Same rule as public.registration_name_key, so staff find a person the way the public lookup does.
+export function nameKey(value) {
+  return value.normalize("NFKC").toLowerCase().replaceAll(/[\s​-‍⁠﻿]/g, "");
+}
+
 // staff_assert_actor raises 42501 when the caller lost access mid-session
 // (deactivated, demoted, or a password reset now requires a change).
 function lostAccess(error) {
@@ -37,42 +47,6 @@ export function validUsername(value) {
 
 function isUuid(value) {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-export const queryAlphabet = "abcdefghjkmnpqrstuvwxyz23456789";
-export function randomQueryCode() {
-  const result = [];
-  const limit = Math.floor(256 / queryAlphabet.length) * queryAlphabet.length;
-  while (result.length < 8) {
-    const [byte] = crypto.getRandomValues(new Uint8Array(1));
-    if (byte < limit) result.push(queryAlphabet[byte % queryAlphabet.length]);
-  }
-  return result.join("");
-}
-
-export async function hashQueryCode(code, pepper) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pepper),
-    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(code));
-  return Array.from(new Uint8Array(signature), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function queryPepper() {
-  const pepper = Deno.env.get("QUERY_CODE_PEPPER");
-  if (pepper && pepper.length >= 32) return pepper;
-  console.error("Missing query code pepper");
-  return null;
-}
-
-// Retries only a query-code hash collision; every other result goes back to the caller with its code.
-export async function withNewQueryCode(pepper, call) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const code = randomQueryCode();
-    const result = await call(await hashQueryCode(code, pepper));
-    const collision = result.error?.code === "23505" && !result.error.message?.includes("DUPLICATE_REQUEST");
-    if (!collision) return { code, ...result };
-  }
-  return { error: { code: "23505", message: "QUERY_CODE_COLLISION" } };
 }
 
 export async function handler(request) {
@@ -159,7 +133,7 @@ export async function handler(request) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }
     let query = database.from("registrations")
-      .select("id,serial_no,full_name,district_id,record_status,import_status,duplicate_review_status,created_at,updated_at,registration_choices(activity_id,attending)",
+      .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending)",
         beforeSerial === null ? { count: "exact" } : undefined)
       .order("serial_no", { ascending: false });
     query = beforeSerial === null ? query.range(page * 100, page * 100 + 99)
@@ -168,7 +142,7 @@ export async function handler(request) {
       if (typeof body.search !== "string" || body.search.length > 100) return response({ error: "INVALID_REQUEST" }, 400);
       // More than 15 digits loses precision in Number, so treat it as a name search instead.
       query = /^\d{1,15}$/.test(body.search) ? query.eq("serial_no", Number(body.search))
-        : query.ilike("full_name", `%${body.search.replaceAll(/[%*,()]/g, "").replaceAll(/[\\_]/g, "\\$&")}%`);
+        : query.ilike("name_key", `%${nameKey(body.search).replaceAll(/[%*,()]/g, "").replaceAll(/[\\_]/g, "\\$&")}%`);
     }
     const { data, count, error } = await query;
     if (error) {
@@ -180,8 +154,8 @@ export async function handler(request) {
 
   if (body.action === "list_reference") {
     const [settings, districts, activities, program] = await Promise.all([
-      database.from("site_settings").select("event_name,venue,address,registration_deadline_at,is_registration_open").single(),
-      database.from("districts").select("id,name,is_active,sort_order").order("sort_order"),
+      database.from("site_settings").select("event_name,venue,address,registration_deadline_at,is_registration_open,is_lookup_open").single(),
+      database.from("districts").select("id,name,sort_order").order("sort_order"),
       database.from("activities").select("id,category,title,starts_at,ends_at,venue,address,map_url,description,fee_amount,is_published,sort_order").order("sort_order"),
       database.from("program_items").select("id,event_date,start_time,end_time,title,note,sort_order,is_visible").order("sort_order"),
     ]);
@@ -192,7 +166,7 @@ export async function handler(request) {
     return response({ settings: settings.data, districts: districts.data, activities: activities.data, program: program.data });
   }
 
-  if (["save_registration", "set_import_status", "mark_duplicate"].includes(body.action)) {
+  if (["save_registration", "set_import_status", "void_registration"].includes(body.action)) {
     if (!isUuid(body.registration_id)) return response({ error: "INVALID_REQUEST" }, 400);
     const operation = {
       save_registration: ["staff_update_registration", {
@@ -202,16 +176,17 @@ export async function handler(request) {
       set_import_status: ["staff_set_import_status", {
         p_registration_id: body.registration_id, p_status: body.status,
       }],
-      mark_duplicate: ["staff_mark_duplicate", {
-        p_registration_id: body.registration_id, p_resolution: body.resolution,
+      void_registration: ["staff_void_registration", {
+        p_registration_id: body.registration_id, p_reason: body.reason,
       }],
     }[body.action];
     const { data, error } = await database.rpc(operation[0], { p_actor: profile.auth_user_id, ...operation[1] });
     if (error) {
       if (lostAccess(error)) return lostAccessResponse();
-      if (error.message?.includes("DUPLICATE_ALREADY_VOID")) return response({ error: "此紀錄已標記為重複作廢" }, 409);
-      // Invalid parameter, bad text, and numeric overflow all come from client input.
-      if (["22023", "22P02", "22003"].includes(error.code)) return response({ error: "請檢查資料與活動選擇" }, 400);
+      if (error.message?.includes("ALREADY_VOID")) return response({ error: "此紀錄已作廢" }, 409);
+      if (error.message?.includes("NAME_TAKEN")) return response({ error: "此姓名與區已有有效登記" }, 409);
+      if (error.message?.includes("INVALID_VOID_REASON")) return response({ error: "請填寫作廢原因（200 字以內）" }, 400);
+      if (isInputError(error)) return response({ error: "請檢查資料與活動選擇" }, 400);
       console.error("Failed staff registration operation", error);
       return response({ error: "登記資料更新失敗" }, 503);
     }
@@ -221,35 +196,17 @@ export async function handler(request) {
 
   if (body.action === "create_registration") {
     if (!isUuid(body.create_request_id)) return response({ error: "INVALID_REQUEST" }, 400);
-    const pepper = queryPepper();
-    if (!pepper) return response({ error: "服務暫時無法使用" }, 503);
-    const { code, data, error } = await withNewQueryCode(pepper, (codeHash) => database.rpc("staff_create_registration", {
+    const { data, error } = await database.rpc("staff_create_registration", {
       p_actor: profile.auth_user_id, p_request_id: body.create_request_id,
-      p_full_name: body.full_name, p_district_id: body.district_id,
-      p_query_code_hash: codeHash, p_choices: body.choices,
-    }));
-    if (!error && data?.length === 1) return response({ query_code: code, serial_no: data[0].serial_no }, 201);
-    if (error?.message?.includes("DUPLICATE_REQUEST")) {
-      return response({ error: "此補登已建立；若未取得查詢碼，請在名單中重設查詢碼" }, 409);
-    }
+      p_full_name: body.full_name, p_district_id: body.district_id, p_choices: body.choices,
+    });
+    if (!error && data?.length === 1) return response({ serial_no: data[0].serial_no }, 201);
+    if (error?.message?.includes("DUPLICATE_REQUEST")) return response({ error: "此補登已建立，請重新整理名單確認" }, 409);
+    if (error?.message?.includes("NAME_TAKEN")) return response({ error: "此姓名與區已有有效登記" }, 409);
     if (lostAccess(error)) return lostAccessResponse();
-    if (["22023", "22P02", "22003"].includes(error?.code)) return response({ error: "請檢查登記資料" }, 400);
+    if (isInputError(error)) return response({ error: "請檢查登記資料" }, 400);
     console.error("Failed to create staff registration", error);
     return response({ error: "補登失敗，請稍後再試" }, 503);
-  }
-
-  if (body.action === "reset_query_code") {
-    const serialNo = Number(body.serial_no);
-    if (!Number.isSafeInteger(serialNo) || serialNo < 1) return response({ error: "INVALID_REQUEST" }, 400);
-    const pepper = queryPepper();
-    if (!pepper) return response({ error: "服務暫時無法使用" }, 503);
-    const { code, data, error } = await withNewQueryCode(pepper, (codeHash) => database.rpc("staff_reset_query_code", {
-      p_actor: profile.auth_user_id, p_serial_no: serialNo, p_query_code_hash: codeHash,
-    }));
-    if (!error) return data ? response({ query_code: code }) : response({ error: "找不到登記紀錄" }, 404);
-    if (lostAccess(error)) return lostAccessResponse();
-    console.error("Failed to reset query code", error);
-    return response({ error: "查詢碼重設失敗" }, 503);
   }
 
   if (profile.role !== "admin") return response({ error: "沒有操作權限" }, 403);
@@ -278,8 +235,8 @@ export async function handler(request) {
     if (error) {
       if (lostAccess(error)) return lostAccessResponse();
       if (error.code === "23505") return response({ error: "名稱已存在" }, 409);
-      // Invalid parameter, check, not-null, bad text, bad date/time, and numeric overflow are all input errors.
-      if (["22023", "23514", "23502", "22P02", "22007", "22008", "22003"].includes(error.code)) {
+      // Settings also fail on check, not-null and bad date/time input.
+      if (isInputError(error) || ["23514", "23502", "22007", "22008"].includes(error.code)) {
         return response({ error: "請檢查設定內容" }, 400);
       }
       console.error("Failed to save reference data", error);

@@ -1,38 +1,15 @@
-const raw = sessionStorage.getItem("registration_success");
-const data = raw ? JSON.parse(raw) : null;
-const backLink = document.querySelector("#back-link");
-const confirmation = document.querySelector("#saved-confirmation");
-let saved = false;
+let data = null;
+try { data = JSON.parse(sessionStorage.getItem("registration_success") ?? "null"); } catch { data = null; }
 
 if (window.APP_CONFIG?.environment === "test") document.querySelector("#test-banner").hidden = false;
 
-if (!data?.query_code) {
+if (!data?.full_name) {
   location.replace("./index.html");
 } else {
-  document.querySelector("#query-code").textContent = data.query_code;
+  document.querySelector("#summary-identity").textContent = `${data.full_name}｜${data.district}`;
+  document.querySelector("#summary-choices").replaceChildren(...data.choices.map((choice) => {
+    const item = document.createElement("li");
+    item.textContent = `${choice.title}：${choice.attending ? "參加" : "不參加"}`;
+    return item;
+  }));
 }
-
-document.querySelector("#copy-button").addEventListener("click", async () => {
-  const copyMessage = document.querySelector("#copy-message");
-  try {
-    await navigator.clipboard.writeText(data.query_code);
-    document.querySelector("#copy-button").textContent = "已複製查詢碼";
-    copyMessage.textContent = "請貼到您會保存的地方，再勾選下方確認。";
-  } catch {
-    copyMessage.textContent = "無法自動複製，請手動選取上方查詢碼並保存。";
-  }
-  copyMessage.hidden = false;
-});
-
-confirmation.addEventListener("change", () => {
-  saved = confirmation.checked;
-  backLink.setAttribute("aria-disabled", String(!saved));
-  if (saved) sessionStorage.removeItem("registration_success");
-});
-
-window.addEventListener("beforeunload", (event) => {
-  if (!saved) {
-    event.preventDefault();
-    event.returnValue = "";
-  }
-});

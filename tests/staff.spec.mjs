@@ -17,8 +17,8 @@ async function mockStaff(page, role, onRequest = () => {}, registrationName = "�
     if (reply) return route.fulfill(reply);
     const result = {
       me: { profile: { auth_user_id: "123e4567-e89b-42d3-a456-426614174000", display_name: "測試服事者", role, must_change_password: false } },
-      list_reference: { settings: { event_name: "測試", is_registration_open: false }, districts: [{ id: 1, name: "林森", is_active: true, sort_order: 1 }], activities: [{ id: 1, title: "測試聚會", is_published: true, fee_amount: 0 }], program: [] },
-      list_registrations: { count: 1, registrations: [{ id: "223e4567-e89b-42d3-a456-426614174000", serial_no: 1, full_name: registrationName, district_id: 1, record_status: "active", import_status: "pending", duplicate_review_status: "unreviewed", registration_choices: [{ activity_id: 1, attending: false }], updated_at: "2026-11-04T00:00:00Z" }] },
+      list_reference: { settings: { event_name: "測試", is_registration_open: false }, districts: [{ id: 1, name: "林森", sort_order: 1 }], activities: [{ id: 1, title: "測試聚會", is_published: true, fee_amount: 0 }], program: [] },
+      list_registrations: { count: 1, registrations: [{ id: "223e4567-e89b-42d3-a456-426614174000", serial_no: 1, full_name: registrationName, district_id: 1, record_status: "active", import_status: "pending", registration_choices: [{ activity_id: 1, attending: false }], updated_at: "2026-11-04T00:00:00Z" }] },
       list_staff: { staff: [] },
       list_audit: { events: [] },
       save_registration: { success: true },
@@ -44,7 +44,7 @@ test("staff registration edit sends all published activity choices", async ({ pa
   expect(saved.choices).toEqual([{ activity_id: 1, attending: true }]);
 });
 
-test("CSV neutralizes spreadsheet formulas and omits query codes", async ({ page }, testInfo) => {
+test("CSV neutralizes spreadsheet formulas", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-chromium");
   await mockStaff(page, "staff", () => {}, "=1+1");
   await page.goto("/admin/");
@@ -55,7 +55,6 @@ test("CSV neutralizes spreadsheet formulas and omits query codes", async ({ page
   await page.getByRole("button", { name: "下載 CSV" }).click();
   const csv = await readFile(await (await download).path(), "utf8");
   expect(csv).toContain("'\u003d1+1");
-  expect(csv).not.toContain("query_code");
 });
 
 for (const role of ["staff", "admin"]) {
@@ -136,7 +135,7 @@ test("retrying a failed back-office registration reuses its request id", async (
     create_registration: (payload) => {
       ids.push(payload.create_request_id);
       return ids.length === 1 ? { status: 503, json: { error: "補登失敗，請稍後再試" } }
-        : { status: 201, json: { query_code: "abcd2345", serial_no: 2 } };
+        : { status: 201, json: { serial_no: 2 } };
     },
   });
   await login(page);
@@ -147,7 +146,7 @@ test("retrying a failed back-office registration reuses its request id", async (
   await form.getByRole("button", { name: "建立補登" }).click();
   await expect(page.locator("#message")).toHaveText("補登失敗，請稍後再試");
   await form.getByRole("button", { name: "建立補登" }).click();
-  await expect(page.locator("#new-registration-code")).toContainText("abcd2345");
+  await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
   expect(ids).toHaveLength(2);
   expect(ids[1]).toBe(ids[0]);
 });
@@ -186,7 +185,7 @@ test("a token refresh keeps the login on an Auth outage and ends it when rejecte
 const twoActivities = {
   list_reference: () => ({ json: {
     settings: { event_name: "測試", is_registration_open: false },
-    districts: [{ id: 1, name: "林森", is_active: true, sort_order: 1 }],
+    districts: [{ id: 1, name: "林森", sort_order: 1 }],
     activities: [{ id: 1, title: "測試聚會", is_published: true, fee_amount: 0 }, { id: 2, title: "新增活動", is_published: true, fee_amount: 100 }],
     program: [],
   } }),
@@ -212,4 +211,21 @@ test("statistics break down answers by district and activity", async ({ page }) 
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0).locator("td")).toHaveText(["林森", "測試聚會", "0", "1", "0"]);
   await expect(rows.nth(1).locator("td")).toHaveText(["林森", "新增活動", "0", "0", "1"]);
+});
+
+test("voiding a registration requires a reason and sends it", async ({ page }) => {
+  let voided;
+  await mockStaff(page, "staff", (payload) => { if (payload.action === "void_registration") voided = payload; }, "測試登記", {
+    void_registration: () => ({ json: { success: true } }),
+  });
+  page.on("dialog", (dialog) => dialog.accept());
+  await login(page);
+  await page.getByRole("button", { name: "查看／處理" }).click();
+  const form = page.locator("#void-form");
+  await form.getByRole("button", { name: "作廢此登記" }).click();
+  expect(voided).toBeUndefined();
+  await form.locator('input[name="reason"]').fill("  填錯了  ");
+  await form.getByRole("button", { name: "作廢此登記" }).click();
+  await expect(page.locator("#message")).toHaveText("登記已作廢。");
+  expect(voided).toEqual({ action: "void_registration", registration_id: "223e4567-e89b-42d3-a456-426614174000", reason: "填錯了" });
 });

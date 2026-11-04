@@ -70,12 +70,10 @@
             <label>匯入狀態<select name="status"><option value="pending">待匯入</option><option value="imported">已匯入</option><option value="reimport_needed">需重新匯入</option></select></label>
             <button type="submit">更新匯入狀態</button>
           </form>
-          <div class="staff-actions">
-            <button id="confirm-distinct" type="button">確認為不同人</button>
-            <button id="void-duplicate" type="button">標記重複作廢</button>
-            <button id="reset-query-code" type="button">重設查詢碼</button>
-          </div>
-          <p id="new-query-code" class="message" hidden></p>
+          <form id="void-form" class="staff-search">
+            <label>作廢原因（例如填錯、重複登記、不參加）<input name="reason" maxlength="200" required /></label>
+            <button type="submit">作廢此登記</button>
+          </form>
         </section>
 
         <section class="card">
@@ -109,17 +107,17 @@
             <label>地址<input name="address" maxlength="300" /></label>
             <label>截止時間（台灣時間；留空代表不設期限）<input name="registration_deadline_at" type="datetime-local" /></label>
             <label><input name="is_registration_open" type="checkbox" /> 開放登記</label>
+            <label><input name="is_lookup_open" type="checkbox" /> 開放公開查詢與修改（緊急時取消勾選可立即停止）</label>
             <button type="submit">儲存網站設定</button>
           </form>
         </section>
 
         <section id="admin-districts" class="card" hidden>
           <h2>區選項</h2>
-          <div class="table-scroll"><table><thead><tr><th>區</th><th>排序</th><th>狀態</th><th>操作</th></tr></thead><tbody id="district-rows"></tbody></table></div>
+          <div class="table-scroll"><table><thead><tr><th>區</th><th>排序</th><th>操作</th></tr></thead><tbody id="district-rows"></tbody></table></div>
           <form id="district-form" class="staff-form">
             <label>區名<input name="name" maxlength="100" required /></label>
             <label>排序<input name="sort_order" type="number" required /></label>
-            <label><input name="is_active" type="checkbox" checked /> 啟用</label>
             <button type="submit">儲存區選項</button>
             <button type="reset">取消編輯</button>
           </form>

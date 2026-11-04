@@ -42,16 +42,11 @@ fieldset { padding: 0; border: 0; }
 .hint { color: #59655f; font-size: .95rem; }
 .actions { display: grid; gap: .75rem; }
 .honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
-.credential { margin: .25rem 0 1rem; font: 700 1.75rem ui-monospace, monospace; letter-spacing: .08em; }
-.confirm { display: flex; align-items: center; gap: .6rem; }
-.confirm input { width: auto; min-height: auto; margin: 0; }
 .button-link { display: block; margin-top: 1rem; padding: .7rem; border-radius: .5rem; text-align: center; text-decoration: none; }
-.button-link[aria-disabled="true"] { opacity: .45; pointer-events: none; }
 
 @media (min-width: 42rem) {
   .program-calendar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .program-slot { grid-template-columns: 1fr; gap: .1rem; }
-  .query-row { display: grid; grid-template-columns: 1fr 10rem; gap: 1rem; align-items: end; }
 }
 
 @media print {

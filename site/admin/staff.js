@@ -39,8 +39,6 @@ function clearSession() {
   document.querySelector("#identity").textContent = "";
   document.querySelector("#temporary-password").textContent = "";
   document.querySelector("#temporary-password").hidden = true;
-  document.querySelector("#new-query-code").textContent = "";
-  document.querySelector("#new-query-code").hidden = true;
   document.querySelector("#new-registration-code").textContent = "";
   document.querySelector("#new-registration-code").hidden = true;
   for (const selector of ["#registration-rows", "#staff-rows", "#audit-rows"]) {
@@ -153,11 +151,11 @@ function renderReference() {
   }, false);
   const staffDistricts = document.querySelector('#create-staff-form select[name="district_id"]');
   staffDistricts.replaceChildren(new Option("未指定", ""));
-  for (const district of reference.districts.filter((item) => item.is_active)) {
+  for (const district of reference.districts) {
     staffDistricts.add(new Option(district.name, district.id));
   }
   for (const [table, items, columns, form, transform] of [
-    ["#district-rows", reference.districts, ["name", "sort_order", "is_active"], "#district-form", (item) => item],
+    ["#district-rows", reference.districts, ["name", "sort_order"], "#district-form", (item) => item],
     ["#activity-rows", reference.activities, ["title", "category", "starts_at", "is_published"], "#activity-form",
       (item) => ({ ...item, starts_at: taipeiInput(item.starts_at), ends_at: taipeiInput(item.ends_at) })],
     ["#program-rows", reference.program, ["event_date", "start_time", "title", "is_visible"], "#program-form",
@@ -183,7 +181,7 @@ async function saveReference(event, kind) {
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
   if (form.dataset.editingId) data.id = form.dataset.editingId;
-  for (const name of ["is_registration_open", "is_active", "is_published", "is_visible"]) {
+  for (const name of ["is_registration_open", "is_lookup_open", "is_published", "is_visible"]) {
     if (form.elements.namedItem(name)) data[name] = form.elements.namedItem(name).checked;
   }
   if (kind === "settings") data.registration_deadline_at = taipeiTimestamp(data.registration_deadline_at);
@@ -218,7 +216,7 @@ async function loadRegistrations() {
     cell(row, registration.serial_no);
     cell(row, registration.full_name);
     cell(row, districtNames.get(registration.district_id));
-    cell(row, registration.record_status);
+    cell(row, recordStatusLabels[registration.record_status] ?? registration.record_status);
     cell(row, registration.import_status);
     cell(row, new Date(registration.updated_at).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }));
     const actions = cell(row, "");
@@ -241,6 +239,8 @@ async function allRegistrations() {
     beforeSerial = registrations.at(-1).serial_no;
   }
 }
+
+const recordStatusLabels = { active: "有效", void: "作廢", cancelled: "已取消" };
 
 function activeRegistrations(registrations) {
   return registrations.filter((item) => item.record_status === "active");
@@ -354,7 +354,7 @@ function renderNewRegistrationForm() {
   const form = document.querySelector("#new-registration-form");
   const districts = form.elements.district_id;
   districts.replaceChildren(new Option("請選擇", ""));
-  for (const district of reference.districts.filter((item) => item.is_active)) {
+  for (const district of reference.districts) {
     districts.add(new Option(district.name, district.id));
   }
   renderChoiceFields(document.querySelector("#new-registration-choices"));
@@ -374,7 +374,7 @@ function openRegistration(registration) {
   form.elements.full_name.value = registration.full_name;
   const districts = form.elements.district_id;
   districts.replaceChildren();
-  for (const district of reference.districts.filter((item) => item.is_active || item.id === registration.district_id)) {
+  for (const district of reference.districts) {
     const option = document.createElement("option");
     option.value = district.id;
     option.textContent = district.name;
@@ -384,13 +384,12 @@ function openRegistration(registration) {
   const choices = new Map(registration.registration_choices.map((choice) => [choice.activity_id, choice.attending]));
   renderChoiceFields(document.querySelector("#detail-choices"), choices, false);
   document.querySelector("#import-form").elements.status.value = registration.import_status;
-  const isVoid = registration.record_status === "duplicate_void";
-  form.querySelectorAll("input, select, button").forEach((control) => control.disabled = isVoid);
-  document.querySelector("#confirm-distinct").disabled = isVoid || registration.duplicate_review_status === "confirmed_distinct";
-  document.querySelector("#void-duplicate").disabled = isVoid;
-  document.querySelector("#reset-query-code").disabled = isVoid;
-  document.querySelector("#new-query-code").textContent = "";
-  document.querySelector("#new-query-code").hidden = true;
+  // Only active rows can be edited; a historical cancelled row can still be voided.
+  const isActive = registration.record_status === "active";
+  form.querySelectorAll("input, select, button").forEach((control) => control.disabled = !isActive);
+  const voidForm = document.querySelector("#void-form");
+  voidForm.reset();
+  voidForm.querySelectorAll("input, button").forEach((control) => control.disabled = registration.record_status === "void");
   detail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -576,7 +575,7 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
     });
     newRegistrationRequestId = crypto.randomUUID();
     const notice = document.querySelector("#new-registration-code");
-    notice.textContent = `流水號 ${result.serial_no}，一次性查詢碼：${result.query_code}。請立即以安全方式交付；離開頁面後無法再次查看。`;
+    notice.textContent = `已建立流水號 ${result.serial_no}。本人日後可用相同的姓名與區查詢。`;
     notice.hidden = false;
     form.reset();
     renderNewRegistrationForm();
@@ -599,24 +598,16 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
     showMessage("匯入狀態已更新。");
   } catch (error) { showMessage(error.message, true); }
 });
-for (const [selector, resolution] of [["#confirm-distinct", "confirmed_distinct"], ["#void-duplicate", "duplicate_void"]]) {
-  document.querySelector(selector).addEventListener("click", async () => {
-    if (resolution === "duplicate_void" && !confirm("確定標記為重複作廢？此操作無法在頁面上撤回。")) return;
-    try {
-      await api("mark_duplicate", { registration_id: selectedRegistration.id, resolution });
-      await refreshRegistration();
-      showMessage("重複紀錄狀態已更新。");
-    } catch (error) { showMessage(error.message, true); }
-  });
-}
-document.querySelector("#reset-query-code").addEventListener("click", async () => {
-  if (!confirm("確定重設查詢碼？舊碼會立即失效。")) return;
+document.querySelector("#void-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!confirm("確定作廢此登記？作廢後不計入統計與 CSV，且無法在頁面上恢復。")) return;
   try {
-    const result = await api("reset_query_code", { serial_no: selectedRegistration.serial_no });
-    const notice = document.querySelector("#new-query-code");
-    notice.textContent = `新查詢碼：${result.query_code}。請立即以安全方式交付；離開頁面後無法再次查看。`;
-    notice.hidden = false;
-    showMessage("查詢碼已重設。");
+    await api("void_registration", {
+      registration_id: selectedRegistration.id,
+      reason: String(new FormData(event.currentTarget).get("reason")).trim(),
+    });
+    await refreshRegistration();
+    showMessage("登記已作廢。");
   } catch (error) { showMessage(error.message, true); }
 });
 document.querySelector("#previous-page").addEventListener("click", () => showRegistrations(page - 1));
