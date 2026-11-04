@@ -84,19 +84,21 @@ async function login(page) {
   await page.getByRole("button", { name: "登入" }).click();
 }
 
-test("saving an edited activity leaves the form ready to create a new one", async ({ page }) => {
+test("activity sort is preserved when editing and defaults to the end when creating", async ({ page }) => {
   const saved = [];
   await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); }, "測試登記", threeActivities);
   await login(page);
   await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).first().click();
+  await page.locator('#activity-form input[name="sort_order"]').fill("");
   await page.locator("#activity-form").getByRole("button", { name: /^儲存活動/ }).click();
   await expect(page.locator("#message")).toHaveText("設定已儲存。");
   await page.locator('#activity-form input[name="title"]').fill("新活動");
-  await page.locator('#activity-form input[name="sort_order"]').fill("9");
   await page.getByRole("button", { name: "儲存活動" }).click();
   await expect.poll(() => saved.length).toBe(2);
   expect(saved[0].id).toBe("1");
+  expect(saved[0].sort_order).toBe(1);
   expect(saved[1].id).toBeUndefined();
+  expect(saved[1].sort_order).toBe(4);
 });
 
 test("activity dates allow an optional Taiwan time", async ({ page }) => {

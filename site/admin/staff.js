@@ -187,6 +187,14 @@ function activityTimeDisplay(value, hasTime) {
   return `${month}/${day}`;
 }
 
+function activitySortOrder(form, value) {
+  if (value !== "") return value;
+  const edited = reference.activities.find((item) => String(item.id) === form.dataset.editingId);
+  if (edited) return edited.sort_order;
+  const existing = reference.activities.map((item) => Number(item.sort_order)).filter(Number.isFinite);
+  return Math.max(0, ...existing) + 1;
+}
+
 function editButton(row, callback) {
   const action = cell(row, "");
   const button = document.createElement("button");
@@ -294,6 +302,7 @@ async function saveReference(event, kind) {
     data.starts_at_has_time = Boolean(data.starts_time);
     data.ends_at = activityTimestamp(data.ends_on, data.ends_time);
     data.ends_at_has_time = Boolean(data.ends_time);
+    data.sort_order = activitySortOrder(form, data.sort_order);
     for (const name of ["starts_on", "starts_time", "ends_on", "ends_time"]) delete data[name];
   }
   // An activity save would change the list being reordered; other saves leave the drag order alone.
