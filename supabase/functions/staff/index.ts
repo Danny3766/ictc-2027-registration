@@ -239,18 +239,18 @@ export async function handler(request) {
       p_hosting: body.hosting ?? null, p_meal_identity: body.meal_identity ?? null,
     });
     if (!error && data?.length === 1) return response({ serial_no: data[0].serial_no }, 201);
-    if (error?.message?.includes("DUPLICATE_REQUEST")) return response({ error: "此補登已建立，請重新整理名單確認" }, 409);
+    if (error?.message?.includes("DUPLICATE_REQUEST")) return response({ error: "此協助登記已建立，請重新整理名單確認" }, 409);
     if (error?.message?.includes("NAME_TAKEN")) return response({ error: "此姓名與區已有有效登記" }, 409);
     if (lostAccess(error)) return lostAccessResponse();
     const mealError = mealResponse(error);
     if (mealError) return mealError;
     if (error?.message?.includes("HOSTING_REQUIRED")) {
-      return response({ error: "開家接待調查已開放，請回答開家接待後再建立補登；看不到接待欄位時請重新整理頁面", code: "HOSTING_REQUIRED" }, 409);
+      return response({ error: "開家接待調查已開放，請回答開家接待後再建立協助登記；看不到接待欄位時請重新整理頁面", code: "HOSTING_REQUIRED" }, 409);
     }
     if (error?.message?.includes("INVALID_HOSTING")) return response({ error: "請檢查開家接待內容" }, 400);
     if (isInputError(error)) return response({ error: "請檢查登記資料" }, 400);
     console.error("Failed to create staff registration", error);
-    return response({ error: "補登失敗，請稍後再試" }, 503);
+    return response({ error: "協助登記失敗，請稍後再試" }, 503);
   }
 
   if (profile.role !== "admin") return response({ error: "沒有操作權限" }, 403);

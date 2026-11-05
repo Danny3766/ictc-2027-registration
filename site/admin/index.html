@@ -39,7 +39,7 @@
       <div id="staff-panel" hidden>
         <nav class="staff-nav" aria-label="後台功能">
           <a href="#section-registrations">登記名單</a>
-          <a href="#section-new">補登</a>
+          <a href="#section-new">協助登記</a>
           <a href="#section-stats">統計與匯出</a>
           <a href="#admin-accounts" data-admin-link hidden>帳號</a>
           <a href="#admin-settings" data-admin-link hidden>網站設定</a>
@@ -101,7 +101,7 @@
         </section>
 
         <section id="section-new" class="card">
-          <h2>補登</h2>
+          <h2>協助登記</h2>
           <form id="new-registration-form" class="staff-form registration-form">
             <div class="registration-columns registration-split">
               <div class="registration-main">
@@ -113,7 +113,7 @@
               </div>
               <fieldset class="activity-panel"><legend>公開活動選擇</legend><div id="new-registration-choices"></div></fieldset>
             </div>
-            <button type="submit">建立補登</button>
+            <button type="submit">建立協助登記</button>
           </form>
           <p id="new-registration-code" class="message" hidden></p>
         </section>
@@ -125,39 +125,58 @@
           <p id="stats-summary"></p>
           <h3>各活動</h3>
           <div class="table-scroll"><table class="numeric"><thead><tr><th>活動</th><th>參加</th><th>其中學生</th><th>不參加</th><th>未回覆</th><th>預估費用</th><th>預估成本</th><th>預估補貼</th></tr></thead><tbody id="stats-rows"></tbody></table></div>
-          <h3>各區</h3>
-          <div class="table-scroll"><table class="numeric"><thead><tr><th>區</th><th>有效登記</th><th>預估費用</th></tr></thead><tbody id="district-stats-rows"></tbody></table></div>
+          <div class="stat-cards">
+            <section class="mini-card">
+              <h3>各區</h3>
+              <div class="table-scroll"><table class="numeric"><thead><tr><th>區</th><th>有效登記</th><th>預估費用</th></tr></thead><tbody id="district-stats-rows"></tbody></table></div>
+            </section>
+            <section class="mini-card">
+              <h3>開家接待回覆</h3>
+              <div class="table-scroll"><table class="numeric"><thead><tr><th>回覆</th><th>登記數</th></tr></thead><tbody id="hosting-status-stats-rows"></tbody></table></div>
+            </section>
+            <section class="mini-card">
+              <h3>接待對象</h3>
+              <div class="table-scroll"><table class="numeric"><thead><tr><th>接待對象</th><th>登記數</th><th>人數</th></tr></thead><tbody id="hosting-capacity-stats-rows"></tbody></table></div>
+            </section>
+            <section class="mini-card">
+              <h3>接機</h3>
+              <div class="table-scroll"><table class="numeric"><thead><tr><th>接機</th><th>登記數</th><th>可載人數</th></tr></thead><tbody id="hosting-pickup-stats-rows"></tbody></table></div>
+            </section>
+          </div>
           <h3>各區各活動</h3>
           <div class="table-scroll"><table class="numeric two-labels"><thead><tr><th>區</th><th>活動</th><th>參加</th><th>不參加</th><th>未回覆</th></tr></thead><tbody id="district-activity-stats-rows"></tbody></table></div>
-          <h3>開家接待</h3>
-          <div class="table-scroll"><table class="numeric"><thead><tr><th>回覆</th><th>登記數</th></tr></thead><tbody id="hosting-status-stats-rows"></tbody></table></div>
-          <div class="table-scroll"><table class="numeric"><thead><tr><th>接待對象</th><th>登記數</th><th>人數</th></tr></thead><tbody id="hosting-capacity-stats-rows"></tbody></table></div>
-          <div class="table-scroll"><table class="numeric"><thead><tr><th>接機</th><th>登記數</th><th>可載人數</th></tr></thead><tbody id="hosting-pickup-stats-rows"></tbody></table></div>
         </section>
 
         <section id="admin-accounts" class="card" hidden>
           <h2>服事者帳號</h2>
           <p class="hint">密碼由管理員設定並私下交付，服事者不需再更改；替其他管理員設定的密碼，對方下次登入須改成自己的。請勿透過群組訊息傳送密碼。</p>
-          <form id="create-staff-form" class="staff-form">
-            <label>帳號<input name="username" minlength="3" maxlength="31" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required /></label>
-            <label>顯示名稱<input name="display_name" maxlength="100" required /></label>
-            <label>角色<select name="role"><option value="staff">服事者</option><option value="admin">管理員</option></select></label>
-            <label>密碼（至少 12 字元）<input name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" data-1p-ignore data-lpignore="true" required /></label>
-            <button type="submit">建立帳號</button>
+          <form id="create-staff-form" class="staff-form compact-form">
+            <div class="field-row">
+              <label>帳號<input name="username" minlength="3" maxlength="31" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required /></label>
+              <label>顯示名稱<input name="display_name" maxlength="100" required /></label>
+              <label>角色<select name="role"><option value="staff">服事者</option><option value="admin">管理員</option></select></label>
+              <label>密碼（至少 12 字元）<input name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" data-1p-ignore data-lpignore="true" required /></label>
+              <button type="submit">建立帳號</button>
+            </div>
           </form>
           <div class="table-scroll"><table><thead><tr><th>帳號</th><th>名稱</th><th>角色</th><th>狀態</th><th>密碼</th><th>操作</th></tr></thead><tbody id="staff-rows"></tbody></table></div>
-          <div id="staff-editor" hidden>
-            <h3 id="staff-editor-title">修改帳號</h3>
-            <form id="edit-staff-form" class="staff-form">
-              <label>帳號（改名後須用新帳號登入）<input name="username" minlength="3" maxlength="31" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required /></label>
-              <label>顯示名稱<input name="display_name" maxlength="100" required /></label>
-              <div class="form-buttons"><button type="submit">儲存帳號</button><button id="close-staff-editor" type="button" class="secondary">關閉</button></div>
-            </form>
-            <form id="staff-password-form" class="staff-form">
-              <label>新密碼（至少 12 字元；設定後對方所有裝置會登出）<input name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" data-1p-ignore data-lpignore="true" required /></label>
-              <button type="submit">設定密碼</button>
-            </form>
-            <p id="staff-password-self" class="hint" hidden>自己的密碼請用上方導覽列的「更改密碼」修改。</p>
+          <div id="staff-editor" class="detail-cards" hidden>
+            <section class="mini-card">
+              <h3 id="staff-editor-title">修改帳號</h3>
+              <form id="edit-staff-form" class="staff-form">
+                <label>帳號（改名後須用新帳號登入）<input name="username" minlength="3" maxlength="31" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required /></label>
+                <label>顯示名稱<input name="display_name" maxlength="100" required /></label>
+                <div class="form-buttons"><button type="submit">儲存帳號</button><button id="close-staff-editor" type="button" class="secondary">關閉</button></div>
+              </form>
+            </section>
+            <section class="mini-card">
+              <h3>設定密碼</h3>
+              <form id="staff-password-form" class="staff-form">
+                <label>新密碼（至少 12 字元；設定後對方所有裝置會登出）<input name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" data-1p-ignore data-lpignore="true" required /></label>
+                <button type="submit">設定密碼</button>
+              </form>
+              <p id="staff-password-self" class="hint" hidden>自己的密碼請用上方導覽列的「更改密碼」修改。</p>
+            </section>
           </div>
         </section>
 
@@ -167,11 +186,15 @@
             <div class="registration-columns">
               <div class="registration-main">
                 <label>活動名稱<input name="event_name" maxlength="200" required /></label>
-                <label>地點<input name="venue" maxlength="200" /></label>
-                <label>地址<input name="address" maxlength="300" /></label>
+                <div class="field-row">
+                  <label>地點<input name="venue" maxlength="200" /></label>
+                  <label class="grow">地址<input name="address" maxlength="300" /></label>
+                </div>
                 <label>截止時間（台灣時間；留空代表不設期限）<input name="registration_deadline_at" type="datetime-local" /></label>
-                <label class="check"><input name="is_registration_open" type="checkbox" /> 開放登記</label>
-                <label class="check"><input name="is_lookup_open" type="checkbox" /> 開放公開查詢與修改（緊急時取消勾選可立即停止）</label>
+                <div class="field-row checks">
+                  <label class="check"><input name="is_registration_open" type="checkbox" /> 開放登記</label>
+                  <label class="check"><input name="is_lookup_open" type="checkbox" /> 開放公開查詢與修改（緊急時取消勾選可立即停止）</label>
+                </div>
               </div>
               <label>備註（選填，500 字內，顯示在公開頁地址下方，例如交通資訊；https:// 開頭的網址可點擊，也可寫成 [顯示文字](https://網址)；地圖請用分享按鈕產生的短網址）<textarea name="event_note" maxlength="500" rows="12"></textarea></label>
             </div>
@@ -181,10 +204,14 @@
 
         <section id="admin-hosting" class="card" hidden>
           <h2>開家接待設定</h2>
-          <p class="hint">開關只影響公開登記頁與查詢頁；後台的登記資料與補登一律可以填寫與修改接待。截止時間與登記共用。</p>
-          <form id="hosting-settings-form" class="staff-form">
-            <label class="check"><input name="is_hosting_open" type="checkbox" /> 開放開家接待調查</label>
-            <label>說明文字（顯示在公開頁接待區塊上方，例如接待期間；請勿填寫個人聯絡資料）<textarea name="hosting_description" maxlength="2000"></textarea></label>
+          <form id="hosting-settings-form" class="staff-form registration-form">
+            <div class="registration-columns registration-split">
+              <div class="registration-main">
+                <label class="check"><input name="is_hosting_open" type="checkbox" /> 開放開家接待調查</label>
+                <p class="hint">開關只影響公開登記頁與查詢頁；後台的登記資料與協助登記一律可以填寫與修改接待。截止時間與登記共用。</p>
+              </div>
+              <label>說明文字（顯示在公開頁接待區塊上方，例如接待期間；請勿填寫個人聯絡資料）<textarea name="hosting_description" maxlength="2000"></textarea></label>
+            </div>
             <button type="submit">儲存開家接待設定</button>
           </form>
         </section>
@@ -197,24 +224,35 @@
               <button id="reorder-activities" type="button" class="secondary">調整排序</button>
               <button id="cancel-reorder" type="button" class="secondary" hidden>取消</button>
             </div></th></tr></thead><tbody id="activity-rows"></tbody></table></div>
-          <form id="activity-form" class="staff-form">
-            <label>類型<select name="category"><option value="meeting">聚會</option><option value="meal">用餐</option><option value="other">其他</option></select></label>
-            <label>名稱<input name="title" maxlength="200" required /></label>
-            <label>開始日期<input name="starts_on" type="date" /></label>
-            <label>開始時間（選填；台灣時間）<input name="starts_time" type="time" /></label>
-            <label>結束日期（選填）<input name="ends_on" type="date" /></label>
-            <label>結束時間（選填；台灣時間）<input name="ends_time" type="time" /></label>
-            <label>地點<input name="venue" maxlength="200" /></label>
-            <label>地址<input name="address" maxlength="300" /></label>
-            <label>地圖連結<input name="map_url" type="url" maxlength="1000" /></label>
+          <h3>新增或編輯活動</h3>
+          <form id="activity-form" class="staff-form compact-form">
+            <div class="field-row">
+              <label>類型<select name="category"><option value="meeting">聚會</option><option value="meal">用餐</option><option value="other">其他</option></select></label>
+              <label class="grow">名稱<input name="title" maxlength="200" required /></label>
+              <label class="check"><input name="is_published" type="checkbox" /> 公開活動</label>
+            </div>
+            <div class="field-row">
+              <label class="pair">開始日期<input name="starts_on" type="date" /></label>
+              <label class="pair">開始時間<input name="starts_time" type="time" /><small class="field-hint">選填；台灣時間</small></label>
+              <label class="pair">結束日期<input name="ends_on" type="date" /><small class="field-hint">選填</small></label>
+              <label class="pair">結束時間<input name="ends_time" type="time" /><small class="field-hint">選填；台灣時間</small></label>
+            </div>
+            <div class="field-row">
+              <label>地點<input name="venue" maxlength="200" /></label>
+              <label class="grow">地址<input name="address" maxlength="300" /></label>
+              <label class="grow">地圖連結<input name="map_url" type="url" maxlength="1000" /></label>
+            </div>
+            <div class="field-row">
+              <label>一般每人費用<input name="fee_amount" type="number" min="0" /><small class="field-hint">留空代表未設定</small></label>
+              <label>學生每人費用<input name="student_fee_amount" type="number" min="0" /><small class="field-hint">留空代表沒有學生價；0 代表學生免費</small></label>
+              <label>實際每人成本<input name="cost_amount" type="number" min="0" /><small class="field-hint">只在後台統計顯示，公開頁看不到</small></label>
+              <label>排序<input name="sort_order" type="number" /><small class="field-hint">選填；留空排最後</small></label>
+            </div>
+            <div class="field-row">
+              <label>報名對象<select name="audience"><option value="all">所有人</option><option value="hosting">有開家接待的聖徒（含家人已登記開家接待）</option></select></label>
+              <label class="grow">限定對象提示<input name="audience_note" maxlength="200" /><small class="field-hint">選填，200 字內；留空顯示「本項優先開放有開家接待的聖徒報名」</small></label>
+            </div>
             <label>說明<textarea name="description" maxlength="2000"></textarea></label>
-            <label>一般每人費用（留空代表未設定）<input name="fee_amount" type="number" min="0" /></label>
-            <label>學生每人費用（留空代表沒有學生價；0 代表學生免費）<input name="student_fee_amount" type="number" min="0" /></label>
-            <label>實際每人成本（只在後台統計顯示，公開頁看不到）<input name="cost_amount" type="number" min="0" /></label>
-            <label>報名對象<select name="audience"><option value="all">所有人</option><option value="hosting">有開家接待的聖徒（含家人已登記開家接待）</option></select></label>
-            <label>限定對象提示（選填，200 字內；留空顯示「本項優先開放有開家接待的聖徒報名」）<input name="audience_note" maxlength="200" /></label>
-            <label>排序（選填；留空排最後）<input name="sort_order" type="number" /></label>
-            <label class="check"><input name="is_published" type="checkbox" /> 公開活動</label>
             <div class="form-buttons"><button type="submit">儲存活動</button><button type="reset" class="secondary">取消編輯</button></div>
           </form>
         </section>
@@ -222,14 +260,19 @@
         <section id="admin-program" class="card" hidden>
           <h2>詳細時間表</h2>
           <div class="table-scroll"><table><thead><tr><th>日期</th><th>時間</th><th>項目</th><th>顯示</th><th>操作</th></tr></thead><tbody id="program-rows"></tbody></table></div>
-          <form id="program-form" class="staff-form">
-            <label>日期<input name="event_date" type="date" required /></label>
-            <label>開始<input name="start_time" type="time" /></label>
-            <label>結束<input name="end_time" type="time" /></label>
-            <label>名稱<input name="title" maxlength="200" required /></label>
-            <label>備註<input name="note" maxlength="500" /></label>
-            <label>排序<input name="sort_order" type="number" required /></label>
-            <label class="check"><input name="is_visible" type="checkbox" checked /> 顯示</label>
+          <h3>新增或編輯時間表項目</h3>
+          <form id="program-form" class="staff-form compact-form">
+            <div class="field-row">
+              <label class="pair">日期<input name="event_date" type="date" required /></label>
+              <label class="pair">開始<input name="start_time" type="time" /></label>
+              <label class="pair">結束<input name="end_time" type="time" /></label>
+              <label class="pair">排序<input name="sort_order" type="number" required /></label>
+              <label class="check"><input name="is_visible" type="checkbox" checked /> 顯示</label>
+            </div>
+            <div class="field-row">
+              <label>名稱<input name="title" maxlength="200" required /></label>
+              <label class="grow">備註<input name="note" maxlength="500" /></label>
+            </div>
             <div class="form-buttons"><button type="submit">儲存時間表項目</button><button type="reset" class="secondary">取消編輯</button></div>
           </form>
         </section>

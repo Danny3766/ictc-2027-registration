@@ -166,19 +166,19 @@ test("retrying a failed back-office registration reuses its request id", async (
   await mockStaff(page, "staff", () => {}, "測試登記", {
     create_registration: (payload) => {
       ids.push(payload.create_request_id);
-      return ids.length === 1 ? { status: 503, json: { error: "補登失敗，請稍後再試" } }
+      return ids.length === 1 ? { status: 503, json: { error: "協助登記失敗，請稍後再試" } }
         : { status: 201, json: { serial_no: 2 } };
     },
   });
   await login(page);
   const form = page.locator("#new-registration-form");
-  await form.locator('input[name="full_name"]').fill("補登測試");
+  await form.locator('input[name="full_name"]').fill("協助測試");
   await form.locator('select[name="district_id"]').selectOption("1");
   await form.locator('input[name="activity_1"][value="true"]').check();
   await form.locator('input[name="hosting_status"][value="not_hosting"]').check();
-  await form.getByRole("button", { name: "建立補登" }).click();
-  await expect(page.locator("#message")).toHaveText("補登失敗，請稍後再試");
-  await form.getByRole("button", { name: "建立補登" }).click();
+  await form.getByRole("button", { name: "建立協助登記" }).click();
+  await expect(page.locator("#message")).toHaveText("協助登記失敗，請稍後再試");
+  await form.getByRole("button", { name: "建立協助登記" }).click();
   await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
   expect(ids).toHaveLength(2);
   expect(ids[1]).toBe(ids[0]);
@@ -455,12 +455,12 @@ test("saving a reorder updates the sort order of an activity edit that is alread
 });
 
 
-test("while reordering, settings still save and keep the drag order, activities wait, and cancelling keeps 補登 input", async ({ page }) => {
+test("while reordering, settings still save and keep the drag order, activities wait, and cancelling keeps 協助登記 input", async ({ page }) => {
   const saves = [];
   await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saves.push(payload.kind); }, "測試登記", threeActivities);
   await login(page);
   const newForm = page.locator("#new-registration-form");
-  await newForm.locator('input[name="full_name"]').fill("補登測試");
+  await newForm.locator('input[name="full_name"]').fill("協助測試");
   await newForm.locator('select[name="district_id"]').selectOption("1");
   await newForm.locator('input[name="activity_2"][value="true"]').check();
 
@@ -480,7 +480,7 @@ test("while reordering, settings still save and keep the drag order, activities 
 
   await page.getByRole("button", { name: "取消", exact: true }).click();
   expect(await activityTitles(page)).toEqual(["活動甲", "活動乙", "活動丙"]);
-  await expect(newForm.locator('input[name="full_name"]')).toHaveValue("補登測試");
+  await expect(newForm.locator('input[name="full_name"]')).toHaveValue("協助測試");
   await expect(newForm.locator('select[name="district_id"]')).toHaveValue("1");
   await expect(newForm.locator('input[name="activity_2"][value="true"]')).toBeChecked();
 });
@@ -719,7 +719,7 @@ test("the registration list shows 10 rows a page and names the import column 匯
   expect(pages).toEqual([0, 1]);
 });
 
-test("補登 must answer hosting while the public survey is open", async ({ page }) => {
+test("協助登記 must answer hosting while the public survey is open", async ({ page }) => {
   let created;
   await mockStaff(page, "staff", () => {}, "測試登記", {
     list_reference: () => ({ json: {
@@ -731,10 +731,10 @@ test("補登 must answer hosting while the public survey is open", async ({ page
   });
   await login(page);
   const form = page.locator("#new-registration-form");
-  await form.locator('input[name="full_name"]').fill("補登接待");
+  await form.locator('input[name="full_name"]').fill("協助接待");
   await form.locator('select[name="district_id"]').selectOption("1");
   await form.locator('input[name="activity_1"][value="false"]').check();
-  await form.getByRole("button", { name: "建立補登" }).click();
+  await form.getByRole("button", { name: "建立協助登記" }).click();
   expect(created).toBeUndefined();
   const hosting = page.locator("#new-registration-hosting");
   // The first question is required here, so pickup can be chosen before it.
@@ -742,7 +742,7 @@ test("補登 must answer hosting while the public survey is open", async ({ page
   await hosting.getByLabel("是", { exact: true }).check();
   await hosting.getByLabel("接待對象").selectOption({ label: "姊妹" });
   await hosting.getByLabel("可以接待幾位？").selectOption("2");
-  await form.getByRole("button", { name: "建立補登" }).click();
+  await form.getByRole("button", { name: "建立協助登記" }).click();
   await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
   expect(created.hosting).toEqual({ status: "hosting", guest_type: "sister", guest_count: 2, pickup_count: 1 });
   await expect(hosting.locator('input[name="hosting_status"]:checked')).toHaveCount(0);
@@ -796,7 +796,7 @@ test("admins save the hosting switch and description from their own card", async
   expect(saved).toEqual({ action: "save_reference", kind: "hosting", data: { is_hosting_open: true, hosting_description: "接待期間 2/19～2/22" } });
 });
 
-test("a 補登 pickup chosen before the first question survives a settings save", async ({ page }) => {
+test("a 協助登記 pickup chosen before the first question survives a settings save", async ({ page }) => {
   const openReference = () => ({ json: {
     settings: { event_name: "測試", is_registration_open: true, is_hosting_open: true },
     districts: [{ id: 1, name: "林森", sort_order: 1 }],
@@ -869,29 +869,29 @@ test("姓名｜區 and hosting sit left of the activity choices on wide screens 
   expect(right.x + right.width).toBeLessThanOrEqual(width);
 });
 
-test("補登 may leave hosting unanswered while the survey is closed, until the server says it opened", async ({ page }) => {
+test("協助登記 may leave hosting unanswered while the survey is closed, until the server says it opened", async ({ page }) => {
   const created = [];
   await mockStaff(page, "staff", () => {}, "測試登記", {
     create_registration: (payload) => {
       created.push(payload);
       return created.length === 1
-        ? { status: 409, json: { error: "開家接待調查已開放，請回答開家接待後再建立補登；看不到接待欄位時請重新整理頁面", code: "HOSTING_REQUIRED" } }
+        ? { status: 409, json: { error: "開家接待調查已開放，請回答開家接待後再建立協助登記；看不到接待欄位時請重新整理頁面", code: "HOSTING_REQUIRED" } }
         : { status: 201, json: { serial_no: 2 } };
     },
   });
   await login(page);
   const form = page.locator("#new-registration-form");
-  await form.locator('input[name="full_name"]').fill("補登未答");
+  await form.locator('input[name="full_name"]').fill("協助未答");
   await form.locator('select[name="district_id"]').selectOption("1");
   await form.locator('input[name="activity_1"][value="false"]').check();
-  await form.getByRole("button", { name: "建立補登" }).click();
-  await expect(page.locator("#message")).toHaveText("開家接待調查已開放，請回答開家接待後再建立補登；看不到接待欄位時請重新整理頁面");
+  await form.getByRole("button", { name: "建立協助登記" }).click();
+  await expect(page.locator("#message")).toHaveText("開家接待調查已開放，請回答開家接待後再建立協助登記；看不到接待欄位時請重新整理頁面");
   expect(created[0].hosting).toBeNull();
   const hosting = page.locator("#new-registration-hosting");
   await expect(hosting.locator('input[name="hosting_status"]').first()).toHaveAttribute("required", "");
-  await expect(form.locator('input[name="full_name"]')).toHaveValue("補登未答");
+  await expect(form.locator('input[name="full_name"]')).toHaveValue("協助未答");
   await hosting.getByLabel("否", { exact: true }).check();
-  await form.getByRole("button", { name: "建立補登" }).click();
+  await form.getByRole("button", { name: "建立協助登記" }).click();
   await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
   expect(created[1].hosting).toEqual({ status: "not_hosting", guest_type: null, guest_count: null, pickup_count: 0 });
 });
@@ -1086,7 +1086,7 @@ test("an unanswered restricted activity stays 未回覆 when staff save an older
   expect(dialogs).toEqual([]);
 });
 
-test("補登 follows the audience and asks the identity for a student-priced meal", async ({ page }) => {
+test("協助登記 follows the audience and asks the identity for a student-priced meal", async ({ page }) => {
   let created;
   await mockStaff(page, "staff", () => {}, "測試登記", { ...mealReplies(), create_registration: (payload) => {
     created = payload;
@@ -1098,17 +1098,47 @@ test("補登 follows the audience and asks the identity for a student-priced mea
   await expect(lunch.locator('input[value="true"]')).toBeDisabled();
   await page.locator("#new-registration-hosting").getByLabel("家人已登記開家接待").check();
   await expect(lunch.locator('input[value="true"]')).toBeEnabled();
-  await form.locator('input[name="full_name"]').fill("補登學生");
+  await form.locator('input[name="full_name"]').fill("協助學生");
   await form.locator('select[name="district_id"]').selectOption("1");
   await lunch.locator('input[value="true"]').check();
   await form.locator('input[name="activity_2"][value="false"]').check();
   await form.locator('input[name="activity_3"][value="false"]').check();
-  await form.getByRole("button", { name: "建立補登" }).click();
+  await form.getByRole("button", { name: "建立協助登記" }).click();
   // The identity question is required now.
   expect(created).toBeUndefined();
   await form.locator(".meal-identity").getByLabel("學生").check();
-  await form.getByRole("button", { name: "建立補登" }).click();
+  await form.getByRole("button", { name: "建立協助登記" }).click();
   await expect(page.locator("#new-registration-code")).toContainText("已建立流水號 5");
+  await expect(page.locator("#message")).toHaveText("協助登記已建立。");
   expect(created.meal_identity).toBe("student");
   expect(created.choices).toEqual([{ activity_id: 1, attending: true }, { activity_id: 2, attending: false }, { activity_id: 3, attending: false }]);
+});
+
+test("admin forms and statistics are compact: fields share rows on wide screens and stack on phones", async ({ page }) => {
+  await mockStaff(page, "admin", () => {}, "測試登記", { list_staff: () => ({ json: { staff: [
+    { auth_user_id: "123e4567-e89b-42d3-a456-426614174099", username: "helper", display_name: "測試服事者乙", role: "staff", is_active: true },
+  ] } }) });
+  await login(page);
+  await expect(page.locator("#section-new h2")).toHaveText("協助登記");
+  await expect(page.locator('.staff-nav a[href="#section-new"]')).toHaveText("協助登記");
+  // Admin sections show once the profile loads; a hidden element measures as an empty box at 0, 0.
+  await expect(page.locator("#activity-form")).toBeVisible();
+  const wide = page.viewportSize().width >= 896;
+  // Both boxes in one call: opening the staff editor scrolls smoothly, so separate reads would disagree.
+  const sameRow = (first, second) => page.evaluate(([a, b]) => {
+    const [one, two] = [a, b].map((selector) => document.querySelector(selector).getBoundingClientRect());
+    return one.width > 0 && two.width > 0 && Math.abs(one.y - two.y) < 2 && two.x > one.x + one.width - 1;
+  }, [first, second]);
+  // A row of related fields, and a date beside its time even on a phone.
+  expect(await sameRow('#activity-form label:has([name="category"])', '#activity-form label:has([name="title"])')).toBe(wide);
+  expect(await sameRow('#activity-form label:has([name="starts_on"])', '#activity-form label:has([name="starts_time"])')).toBe(true);
+  expect(await sameRow('#program-form label:has([name="event_date"])', '#program-form label:has([name="start_time"])')).toBe(true);
+  expect(await sameRow('#create-staff-form label:has([name="username"])', '#create-staff-form label:has([name="display_name"])')).toBe(wide);
+  // The short statistics tables share a row on wide screens.
+  expect(await sameRow("#section-stats .stat-cards > :nth-child(1)", "#section-stats .stat-cards > :nth-child(2)")).toBe(wide);
+  // 修改帳號 and 設定密碼 are two cards side by side.
+  await page.locator("#staff-rows tr").first().getByRole("button", { name: "修改" }).click();
+  expect(await sameRow("#staff-editor > :nth-child(1)", "#staff-editor > :nth-child(2)")).toBe(wide);
+  // Nothing widens the page.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize().width);
 });
