@@ -84,6 +84,28 @@ main.wide .registration-form { max-width: none; }
   .detail-cards { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: start; }
 }
 
+/* Compact forms: related fields share a row and wrap to one per line on phones; a .pair (date, time)
+   is narrow enough that two still fit side by side there. Labels align at the top, so a hint under one
+   input does not push its neighbours down. */
+main.wide .compact-form { max-width: none; }
+.field-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .75rem 1rem; }
+/* 12rem: two plain fields need more than the widest phone (about 412px), so phones get one per line. */
+.field-row > * { flex: 1 1 12rem; min-width: 0; }
+.field-row > .grow { flex-grow: 2.5; }
+.field-row > .pair { flex-basis: 7rem; }
+/* Date and time inputs have a built-in minimum width that would spill into the next field. */
+.field-row input, .field-row select { min-width: 0; }
+/* A check box sits level with the inputs beside it (label text plus its gap above each input). */
+.field-row > label.check { flex: 0 1 auto; margin-top: 2.6rem; }
+.field-row.checks > label.check { margin-top: 0; }
+.field-row > button { flex: 0 0 auto; align-self: flex-end; margin-top: 0; }
+.field-hint { color: #59655f; font-size: .8rem; line-height: 1.4; }
+.card h3 + .compact-form { margin-top: .5rem; }
+
+/* 統計: the four short tables share a row instead of each spanning the page. */
+.stat-cards { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); align-items: start; margin: 1rem 0; }
+.stat-cards .table-scroll { margin: 0; }
+
 .table-scroll { overflow-x: auto; margin: .5rem 0 1rem; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: .55rem .65rem; border-bottom: 1px solid #e1e8e4; text-align: left; vertical-align: middle; white-space: nowrap; }
@@ -138,6 +160,3 @@ tr.dragging .drag-handle { cursor: grabbing; }
   #admin-activities.reordering :is(th, td):nth-child(4),
   #admin-activities.reordering :is(th, td):nth-child(5) { display: none; }
 }
-
-/* The password form is a separate action from renaming, so it gets its own space. */
-#staff-password-form { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5ebe8; }

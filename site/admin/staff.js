@@ -112,7 +112,7 @@ function clearSession() {
   document.querySelector("#new-registration-code").textContent = "";
   document.querySelector("#new-registration-code").hidden = true;
   setReordering(false);
-  // The 補登 form keeps input across redraws, so a shared device must not hand it to the next login.
+  // The 協助登記 form keeps input across redraws, so a shared device must not hand it to the next login.
   document.querySelector("#new-registration-form").reset();
   for (const selector of ["#registration-rows", "#staff-rows"]) {
     document.querySelector(selector).replaceChildren();
@@ -1058,7 +1058,7 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
     form.reset();
     renderNewRegistrationForm();
     await loadRegistrations();
-    showMessage("補登已建立。");
+    showMessage("協助登記已建立。");
   } catch (error) {
     if (error.code === "HOSTING_REQUIRED") {
       // An admin opened hosting after this page loaded; mark the answer required and keep the input.
