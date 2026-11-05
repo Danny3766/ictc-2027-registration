@@ -646,3 +646,24 @@ test("a description sent while editing shows in the edit view and the registrati
   expect(asked).toBe(true);
   await expect(page.locator("#hosting-section")).toContainText("接待期間 2/19（五）～2/22（一）");
 });
+
+test("hosting options stay readable when there is no description", async ({ page }) => {
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({ json: { ...openPage(), settings: { ...openPage().settings, is_hosting_open: true, hosting_description: null } } });
+    }
+    return route.fulfill({ json: { ...queried(true), hosting: brothers } });
+  });
+  // Each choice sits on one line under the legend, starting at the section's left edge.
+  const readable = async (section) => {
+    const [box, first] = await Promise.all([section.boundingBox(), section.locator(".hosting-options label").first().boundingBox()]);
+    expect(first.x - box.x).toBeLessThan(8);
+    expect(first.height).toBeLessThan(40);
+    expect(first.width).toBeGreaterThan(60);
+  };
+  await page.goto("/");
+  await readable(page.locator("#hosting-section"));
+  await query(page);
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  await readable(page.locator("#edit-hosting-section"));
+});

@@ -45,7 +45,8 @@ fieldset { padding: 0; border: 0; }
 #save-edit:disabled { cursor: not-allowed; }
 .hosting-section { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5ebe8; }
 .hosting-section > legend { float: left; width: 100%; padding: 0; font-weight: 700; }
-.hosting-section > legend + * { clear: left; }
+/* Every block after the floated legend clears it; the first one may be a hidden description. */
+.hosting-section > legend ~ * { clear: left; }
 .hosting-description { white-space: pre-line; }
 .hosting-options, .hosting-guest { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; }
 .hosting-options label, .hosting-guest label { display: flex; align-items: center; gap: .35rem; margin: .4rem 0; }
