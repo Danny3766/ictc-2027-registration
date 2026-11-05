@@ -14,6 +14,7 @@ let count = 0;
 let search = "";
 let visibleRegistrations = [];
 let selectedRegistration;
+let editingStaff = null;
 const adminSections = ["#admin-accounts", "#admin-settings", "#admin-hosting", "#admin-activities", "#admin-program"];
 
 function showAdminSections(visible) {
@@ -88,8 +89,11 @@ function clearSession() {
   staffPanel.hidden = true;
   showAdminSections(false);
   document.querySelector("#identity").textContent = "";
-  document.querySelector("#temporary-password").textContent = "";
-  document.querySelector("#temporary-password").hidden = true;
+  for (const form of ["#create-staff-form", "#edit-staff-form", "#staff-password-form", "#change-password-form"]) {
+    document.querySelector(form).reset();
+  }
+  document.querySelector("#staff-editor").hidden = true;
+  editingStaff = null;
   document.querySelector("#new-registration-code").textContent = "";
   document.querySelector("#new-registration-code").hidden = true;
   setReordering(false);
@@ -283,11 +287,6 @@ function renderReference() {
     registration_deadline_at: taipeiInput(reference.settings.registration_deadline_at),
   }, false);
   fillForm(document.querySelector("#hosting-settings-form"), reference.settings, false);
-  const staffDistricts = document.querySelector('#create-staff-form select[name="district_id"]');
-  staffDistricts.replaceChildren(new Option("未指定", ""));
-  for (const district of reference.districts) {
-    staffDistricts.add(new Option(district.name, district.id));
-  }
   renderReferenceRows();
   renderNewRegistrationForm();
 }
@@ -582,31 +581,40 @@ async function loadStaff() {
     cell(row, person.display_name);
     cell(row, label("role", person.role));
     cell(row, person.is_active ? "啟用" : "停用");
-    cell(row, person.must_change_password ? "待更改" : "已更改");
+    cell(row, person.must_change_password ? "待更改" : "—");
     const actions = cell(row, "");
-    const reset = document.createElement("button");
-    reset.type = "button";
-    reset.textContent = "重設密碼";
-    reset.addEventListener("click", () => changeStaff(person, "reset_staff_password"));
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = "修改";
+    edit.addEventListener("click", () => openStaffEditor(person));
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.textContent = person.is_active ? "停用" : "啟用";
-    toggle.addEventListener("click", () => changeStaff(person, "set_staff_active"));
-    if (person.auth_user_id === profile.auth_user_id) actions.append(toggle);
-    else actions.append(reset, toggle);
+    toggle.addEventListener("click", () => toggleStaff(person));
+    actions.append(edit, toggle);
     rows.append(row);
   }
 }
 
-async function changeStaff(person, action) {
-  if (!confirm(`確定要${action === "reset_staff_password" ? "重設密碼" : person.is_active ? "停用" : "啟用"} ${person.username}？`)) return;
+// One editor for the account picked in the list: rename it, or set its password (not one's own).
+function openStaffEditor(person) {
+  editingStaff = person;
+  const editor = document.querySelector("#staff-editor");
+  editor.hidden = false;
+  document.querySelector("#staff-editor-title").textContent = `修改帳號：${person.username}`;
+  fillForm(document.querySelector("#edit-staff-form"), { username: person.username, display_name: person.display_name }, false);
+  const passwordForm = document.querySelector("#staff-password-form");
+  passwordForm.reset();
+  const self = person.auth_user_id === profile.auth_user_id;
+  passwordForm.hidden = self;
+  document.querySelector("#staff-password-self").hidden = !self;
+  editor.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function toggleStaff(person) {
+  if (!confirm(`確定要${person.is_active ? "停用" : "啟用"} ${person.username}？`)) return;
   try {
-    const result = await api(action, { user_id: person.auth_user_id, is_active: !person.is_active });
-    if (result.password) {
-      const notice = document.querySelector("#temporary-password");
-      notice.textContent = `一次性初始密碼：${result.password}。請立即以安全方式交付；離開頁面後無法再次查看。`;
-      notice.hidden = false;
-    }
+    await api("set_staff_active", { user_id: person.auth_user_id, is_active: !person.is_active });
     await loadStaff();
     showMessage("帳號已更新。");
   } catch (error) { showMessage(error.message, true); }
@@ -616,7 +624,7 @@ async function openStaff() {
   const result = await api("me");
   profile = result.profile;
   loginPanel.hidden = true;
-  changePasswordPanel.hidden = !profile.must_change_password;
+  showChangePassword(profile.must_change_password);
   staffPanel.hidden = profile.must_change_password;
   document.querySelector("#identity").textContent = `${profile.display_name}｜${label("role", profile.role)}`;
   if (profile.must_change_password) return;
@@ -794,6 +802,24 @@ document.querySelector("#login-form").addEventListener("submit", async (event) =
   } catch (error) { showMessage(error.message, true); }
 });
 
+// The same form serves a required change (first login or a reset) and a change by choice.
+function showChangePassword(visible, byChoice = false) {
+  changePasswordPanel.hidden = !visible;
+  document.querySelector("#change-password-title").textContent = byChoice ? "更改密碼" : "更改初始密碼";
+  document.querySelector("#change-password-intro").textContent = byChoice
+    ? "輸入目前密碼與新密碼；完成後所有裝置都會登出，請用新密碼重新登入。"
+    : "首次登入或密碼重設後須更改密碼，完成後才能使用後台。";
+  document.querySelector("#cancel-change-password").hidden = !byChoice;
+  if (!visible) document.querySelector("#change-password-form").reset();
+}
+
+document.querySelector("#change-password-button").addEventListener("click", () => {
+  showChangePassword(true, true);
+  changePasswordPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.querySelector('#change-password-form input[name="current_password"]').focus();
+});
+document.querySelector("#cancel-change-password").addEventListener("click", () => showChangePassword(false));
+
 document.querySelector("#change-password-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -811,16 +837,47 @@ document.querySelector("#create-staff-form").addEventListener("submit", async (e
   event.preventDefault();
   const form = event.currentTarget;
   try {
-    const values = Object.fromEntries(new FormData(form));
-    values.district_id = values.district_id ? Number(values.district_id) : null;
-    const result = await api("create_staff", values);
+    await api("create_staff", Object.fromEntries(new FormData(form)));
     form.reset();
-    const notice = document.querySelector("#temporary-password");
-    notice.textContent = `一次性初始密碼：${result.password}。請立即以安全方式交付；離開頁面後無法再次查看。`;
-    notice.hidden = false;
     await loadStaff();
-    showMessage("帳號已建立。");
+    showMessage("帳號已建立。請以安全方式私下交付密碼。");
   } catch (error) { showMessage(error.message, true); }
+});
+
+document.querySelector("#edit-staff-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!editingStaff) return;
+  const values = Object.fromEntries(new FormData(event.currentTarget));
+  try {
+    await api("update_staff", { user_id: editingStaff.auth_user_id, ...values });
+    if (editingStaff.auth_user_id === profile.auth_user_id) {
+      profile.display_name = values.display_name.trim();
+      document.querySelector("#identity").textContent = `${profile.display_name}｜${label("role", profile.role)}`;
+    }
+    const renamed = values.username.trim().toLowerCase() !== editingStaff.username;
+    editingStaff = { ...editingStaff, username: values.username.trim().toLowerCase(), display_name: values.display_name.trim() };
+    document.querySelector("#staff-editor-title").textContent = `修改帳號：${editingStaff.username}`;
+    showMessage(renamed ? "帳號已更新，之後請用新帳號名稱登入。" : "帳號已更新。");
+    await loadStaff();
+  } catch (error) { showMessage(error.message, true); }
+});
+
+document.querySelector("#staff-password-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (!editingStaff || !confirm(`確定設定 ${editingStaff.username} 的密碼？對方所有已登入的裝置都會登出。`)) return;
+  try {
+    const result = await api("set_staff_password", { user_id: editingStaff.auth_user_id, password: form.elements.password.value });
+    form.reset();
+    showMessage(result.must_change_password
+      ? "密碼已設定。對方是管理員，下次登入時須改成自己的密碼；請以安全方式私下交付。"
+      : "密碼已設定。請以安全方式私下交付。");
+  } catch (error) { showMessage(error.message, true); }
+});
+
+document.querySelector("#close-staff-editor").addEventListener("click", () => {
+  document.querySelector("#staff-editor").hidden = true;
+  editingStaff = null;
 });
 
 // A failed load keeps the previous page and search, so the controls match the rows on screen.

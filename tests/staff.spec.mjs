@@ -183,19 +183,94 @@ test("retrying a failed back-office registration reuses its request id", async (
   expect(ids[1]).toBe(ids[0]);
 });
 
-test("admins cannot reset their own password from the account list", async ({ page }) => {
-  const self = "123e4567-e89b-42d3-a456-426614174000";
-  await mockStaff(page, "admin", () => {}, "測試登記", {
-    list_staff: () => ({ json: { staff: [
-      { auth_user_id: self, username: "tester", display_name: "測試服事者", role: "admin", is_active: true },
-      { auth_user_id: "323e4567-e89b-42d3-a456-426614174000", username: "other", display_name: "其他", role: "staff", is_active: true },
-    ] } }),
+const self = "123e4567-e89b-42d3-a456-426614174000";
+const other = "323e4567-e89b-42d3-a456-426614174000";
+const twoAccounts = () => ({ json: { staff: [
+  { auth_user_id: self, username: "tester", display_name: "測試服事者", role: "admin", is_active: true },
+  { auth_user_id: other, username: "other", display_name: "其他", role: "staff", is_active: true },
+] } });
+
+test("admins set another account's password, but change their own with the current one", async ({ page }) => {
+  const sent = [];
+  await mockStaff(page, "admin", (payload) => { if (payload.action === "set_staff_password") sent.push(payload); }, "測試登記", {
+    list_staff: twoAccounts,
+    set_staff_password: () => ({ json: { success: true } }),
   });
+  page.on("dialog", (dialog) => dialog.accept());
   await login(page);
   const rows = page.locator("#staff-rows tr");
   await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0).getByRole("button", { name: "重設密碼" })).toHaveCount(0);
-  await expect(rows.nth(1).getByRole("button", { name: "重設密碼" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "重設密碼" })).toHaveCount(0);
+
+  await rows.nth(0).getByRole("button", { name: "修改" }).click();
+  await expect(page.locator("#staff-password-form")).toBeHidden();
+  await expect(page.locator("#staff-password-self")).toBeVisible();
+
+  await rows.nth(1).getByRole("button", { name: "修改" }).click();
+  const passwordForm = page.locator("#staff-password-form");
+  await expect(passwordForm).toBeVisible();
+  await passwordForm.locator('input[name="password"]').fill("short");
+  await passwordForm.getByRole("button", { name: "設定密碼" }).click();
+  expect(sent).toHaveLength(0);
+  await passwordForm.locator('input[name="password"]').fill("new-staff-password-1");
+  await passwordForm.getByRole("button", { name: "設定密碼" }).click();
+  await expect(page.locator("#message")).toHaveText("密碼已設定。請以安全方式私下交付。");
+  expect(sent).toEqual([{ action: "set_staff_password", user_id: other, password: "new-staff-password-1" }]);
+  await expect(passwordForm.locator('input[name="password"]')).toHaveValue("");
+});
+
+test("admins create accounts with a password and no district, and rename them", async ({ page }) => {
+  const sent = [];
+  await mockStaff(page, "admin", (payload) => { if (["create_staff", "update_staff"].includes(payload.action)) sent.push(payload); }, "測試登記", {
+    list_staff: twoAccounts,
+    create_staff: () => ({ status: 201, json: { success: true } }),
+    update_staff: () => ({ json: { success: true } }),
+  });
+  await login(page);
+  const create = page.locator("#create-staff-form");
+  await expect(create.locator('select[name="district_id"]')).toHaveCount(0);
+  await create.locator('input[name="username"]').fill("newhelper");
+  await create.locator('input[name="display_name"]').fill("新服事者");
+  await create.locator('input[name="password"]').fill("new-staff-password-1");
+  await create.getByRole("button", { name: "建立帳號" }).click();
+  await expect(page.locator("#message")).toHaveText("帳號已建立。請以安全方式私下交付密碼。");
+  expect(sent[0]).toEqual({ action: "create_staff", username: "newhelper", display_name: "新服事者", role: "staff", password: "new-staff-password-1" });
+  await expect(create.locator('input[name="password"]')).toHaveValue("");
+
+  await page.locator("#staff-rows tr").nth(1).getByRole("button", { name: "修改" }).click();
+  const edit = page.locator("#edit-staff-form");
+  await expect(edit.locator('input[name="username"]')).toHaveValue("other");
+  await edit.locator('input[name="username"]').fill("renamed");
+  await edit.locator('input[name="display_name"]').fill("改名後");
+  await edit.getByRole("button", { name: "儲存帳號" }).click();
+  await expect(page.locator("#message")).toHaveText("帳號已更新，之後請用新帳號名稱登入。");
+  expect(sent[1]).toEqual({ action: "update_staff", user_id: other, username: "renamed", display_name: "改名後" });
+  await page.getByRole("button", { name: "關閉", exact: true }).click();
+  await expect(page.locator("#staff-editor")).toBeHidden();
+});
+
+test("anyone signed in can change their own password from the navigation", async ({ page }) => {
+  let sent;
+  await mockStaff(page, "staff", (payload) => { if (payload.action === "change_password") sent = payload; }, "測試登記", {
+    change_password: () => ({ json: { success: true } }),
+  });
+  await login(page);
+  await expect(page.locator("#change-password-panel")).toBeHidden();
+  await page.locator(".staff-nav").getByRole("button", { name: "更改密碼" }).click();
+  const panel = page.locator("#change-password-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel.locator("h2")).toHaveText("更改密碼");
+  await panel.getByRole("button", { name: "取消" }).click();
+  await expect(panel).toBeHidden();
+
+  await page.locator(".staff-nav").getByRole("button", { name: "更改密碼" }).click();
+  await panel.locator('input[name="current_password"]').fill("old-test-password-1");
+  await panel.locator('input[name="password"]').fill("new-test-password-1");
+  await panel.locator('button[type="submit"]').click();
+  await expect(page.locator("#message")).toHaveText("密碼已更改，請使用新密碼重新登入。");
+  expect(sent).toEqual({ action: "change_password", current_password: "old-test-password-1", password: "new-test-password-1" });
+  await expect(page.locator("#login-panel")).toBeVisible();
+  await expect(page.locator("#staff-panel")).toBeHidden();
 });
 
 test("a token refresh keeps the login on an Auth outage and ends it when rejected", async ({ page }) => {
@@ -683,4 +758,21 @@ test("補登 may leave hosting unanswered while the survey is closed, until the 
   await form.getByRole("button", { name: "建立補登" }).click();
   await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
   expect(created[1].hosting).toEqual({ status: "not_hosting", guest_type: null, guest_count: null, family_count: null, note: null });
+});
+
+test("a password set for another admin must be changed at their next login", async ({ page }) => {
+  await mockStaff(page, "admin", () => {}, "測試登記", {
+    list_staff: () => ({ json: { staff: [
+      { auth_user_id: self, username: "tester", display_name: "測試服事者", role: "admin", is_active: true },
+      { auth_user_id: other, username: "backup", display_name: "備援管理員", role: "admin", is_active: true },
+    ] } }),
+    set_staff_password: () => ({ json: { success: true, must_change_password: true } }),
+  });
+  page.on("dialog", (dialog) => dialog.accept());
+  await login(page);
+  await page.locator("#staff-rows tr").nth(1).getByRole("button", { name: "修改" }).click();
+  const form = page.locator("#staff-password-form");
+  await form.locator('input[name="password"]').fill("new-admin-password-1");
+  await form.getByRole("button", { name: "設定密碼" }).click();
+  await expect(page.locator("#message")).toHaveText("密碼已設定。對方是管理員，下次登入時須改成自己的密碼；請以安全方式私下交付。");
 });

@@ -22,7 +22,7 @@ export function nameKey(value) {
 }
 
 // staff_assert_actor raises 42501 when the caller lost access mid-session
-// (deactivated, demoted, or a password reset now requires a change).
+// (deactivated or demoted, or must_change_password set before login).
 function lostAccess(error) {
   return error?.code === "42501";
 }
@@ -39,6 +39,20 @@ function projectKey(name, fallback) {
 // Auth hashes with bcrypt, which accepts at most 72 bytes; a Chinese character takes 3.
 export function validPassword(value) {
   return typeof value === "string" && value.length >= 12 && new TextEncoder().encode(value).length <= 72;
+}
+
+const passwordRuleMessage = "密碼須至少 12 字元，且不超過 72 bytes（一個中文字約佔 3 bytes）";
+const weakPasswordMessage = "這組密碼不符合安全規則（可能過於常見或曾外洩），請換一組";
+
+// Supabase Auth refuses some passwords by its own policy; the admin must pick another, not retry.
+// Only this code: other 422 errors have other causes and must be logged, not shown as a weak password.
+export function isWeakPassword(error) {
+  return error?.code === "weak_password";
+}
+
+// UUIDs arrive in any letter case (isUuid accepts both), so compare them case-insensitively.
+export function sameUser(left, right) {
+  return typeof left === "string" && typeof right === "string" && left.toLowerCase() === right.toLowerCase();
 }
 
 export function validUsername(value) {
@@ -87,7 +101,7 @@ export async function handler(request) {
   if (body.action === "me") return response({ profile });
   if (body.action === "change_password") {
     if (typeof body.current_password !== "string" || !body.current_password) return response({ error: "請輸入目前密碼" }, 400);
-    if (!validPassword(body.password)) return response({ error: "密碼須至少 12 字元，且不超過 72 bytes（一個中文字約佔 3 bytes）" }, 400);
+    if (!validPassword(body.password)) return response({ error: passwordRuleMessage }, 400);
     if (body.password === body.current_password) return response({ error: "新密碼不可與目前密碼相同" }, 400);
     // Per-user limit: Auth's own sign-in limit counts the shared Edge Function IP, not this caller.
     // The slot is reserved atomically before checking, so parallel guesses cannot exceed it.
@@ -111,6 +125,7 @@ export async function handler(request) {
     }
     const { error: passwordError } = await database.auth.admin.updateUserById(profile.auth_user_id, { password: body.password });
     if (passwordError) {
+      if (isWeakPassword(passwordError)) return response({ error: weakPasswordMessage }, 400);
       console.error("Failed to change staff password", passwordError);
       return response({ error: "密碼更新失敗" }, 503);
     }
@@ -259,7 +274,7 @@ export async function handler(request) {
 
   if (body.action === "list_staff") {
     const { data, error } = await database.from("staff_profiles")
-      .select("auth_user_id,username,display_name,district_id,role,is_active,must_change_password,created_at")
+      .select("auth_user_id,username,display_name,role,is_active,must_change_password,created_at")
       .order("created_at");
     if (error) {
       console.error("Failed to list staff", error);
@@ -274,18 +289,8 @@ export async function handler(request) {
     if (!validUsername(username) || !displayName || displayName.length > 100 || !["admin", "staff"].includes(body.role)) {
       return response({ error: "請檢查帳號資料" }, 400);
     }
-    const districtId = body.district_id ?? null;
-    if (districtId !== null) {
-      // Checked before the Auth user exists, so a bad id never forces a rollback.
-      if (!Number.isSafeInteger(districtId)) return response({ error: "請檢查帳號資料" }, 400);
-      const { data: district, error: districtError } = await database.from("districts")
-        .select("id").eq("id", districtId).maybeSingle();
-      if (districtError) {
-        console.error("Failed to check staff district", districtError);
-        return response({ error: "帳號建立失敗" }, 503);
-      }
-      if (!district) return response({ error: "請檢查帳號資料" }, 400);
-    }
+    // The admin sets the password and hands it over privately; the person need not change it.
+    if (!validPassword(body.password)) return response({ error: passwordRuleMessage }, 400);
     const { data: existing, error: existingError } = await database.from("staff_profiles")
       .select("auth_user_id").eq("username", username).maybeSingle();
     if (existingError) {
@@ -293,9 +298,8 @@ export async function handler(request) {
       return response({ error: "帳號建立失敗" }, 503);
     }
     if (existing) return response({ error: "帳號名稱已被使用" }, 409);
-    const password = crypto.randomUUID().replaceAll("-", "");
     const { data: created, error: createError } = await database.auth.admin.createUser({
-      email: `${username}@accounts.invalid`, password, email_confirm: true,
+      email: `${username}@accounts.invalid`, password: body.password, email_confirm: true,
     });
     if (createError?.code === "email_exists") {
       // Recheck: another admin may have just created the same name, which is not a leftover.
@@ -305,6 +309,7 @@ export async function handler(request) {
       console.error("Auth user exists without staff profile", username);
       return response({ error: "帳號名稱已被使用；若名單中沒有此帳號，請聯絡維護人員清除" }, 409);
     }
+    if (isWeakPassword(createError)) return response({ error: weakPasswordMessage }, 400);
     if (createError || !created.user) {
       console.error("Failed to create Auth user", createError);
       return response({ error: "帳號建立失敗" }, 503);
@@ -315,7 +320,7 @@ export async function handler(request) {
       p_username: username,
       p_display_name: displayName,
       p_role: body.role,
-      p_district_id: districtId,
+      p_district_id: null,
     });
     if (profileCreateError) {
       console.error("Failed to create staff profile", profileCreateError);
@@ -327,38 +332,121 @@ export async function handler(request) {
       if (lostAccess(profileCreateError)) return lostAccessResponse();
       return response({ error: "帳號建立失敗" }, 503);
     }
-    return response({ password }, 201);
+    return response({ success: true }, 201);
   }
 
-  if (body.action === "reset_staff_password") {
+  if (body.action === "set_staff_password") {
     if (!isUuid(body.user_id)) return response({ error: "INVALID_REQUEST" }, 400);
-    // A self reset would end the caller's session before the one-time password could be read.
-    if (body.user_id === profile.auth_user_id) {
-      return response({ error: "不能重設自己的密碼，請由其他管理員重設" }, 400);
+    // Changing one's own password goes through change_password, which checks the current one.
+    if (sameUser(body.user_id, profile.auth_user_id)) {
+      return response({ error: "自己的密碼請用「更改密碼」修改" }, 400);
     }
-    // Mark first: it confirms the target is staff and ends its sessions before the password changes.
-    const { error: profileResetError } = await database.rpc("staff_mark_password_reset", {
+    if (!validPassword(body.password)) return response({ error: passwordRuleMessage }, 400);
+    // 1. The database checks the caller is an admin and the target is someone else. Its only change
+    //    is marking an admin target to change the password, which is safe even if nothing follows.
+    const { error: checkError } = await database.rpc("staff_check_password_set", {
       p_actor: profile.auth_user_id, p_user_id: body.user_id,
     });
-    if (profileResetError) {
-      if (lostAccess(profileResetError)) return lostAccessResponse();
-      if (profileResetError.message.includes("STAFF_NOT_FOUND")) return response({ error: "找不到帳號" }, 404);
-      console.error("Failed to record staff password reset", profileResetError);
-      return response({ error: "密碼重設失敗" }, 503);
+    if (checkError) {
+      if (lostAccess(checkError)) return lostAccessResponse();
+      if (checkError.message?.includes("SELF_PASSWORD_SET")) return response({ error: "自己的密碼請用「更改密碼」修改" }, 400);
+      if (checkError.message?.includes("STAFF_NOT_FOUND")) return response({ error: "找不到帳號" }, 404);
+      console.error("Failed to check a staff password change", checkError);
+      return response({ error: "密碼設定失敗" }, 503);
     }
-    const password = crypto.randomUUID().replaceAll("-", "");
-    const { error: resetError } = await database.auth.admin.updateUserById(body.user_id, { password });
-    if (resetError) {
-      console.error("Failed to reset staff password", resetError);
-      return response({ error: "帳號已登出並須更改密碼，但新密碼未設定成功，請再重設一次" }, 503);
+    // 2. The password changes. A refused password leaves no logout and no audit of a change.
+    const { error: setError } = await database.auth.admin.updateUserById(body.user_id, { password: body.password });
+    if (setError) {
+      if (isWeakPassword(setError)) return response({ error: weakPasswordMessage }, 400);
+      console.error("Failed to set staff password", setError);
+      return response({ error: "密碼設定失敗，請稍後再試" }, 503);
     }
-    // Revoke again: a sign-in with the old password between the first revoke and the update must not survive.
-    const { error: revokeError } = await database.rpc("staff_revoke_sessions", { p_user_id: body.user_id });
-    if (revokeError) {
-      console.error("Failed to revoke sessions after password reset", revokeError);
-      return response({ error: "密碼已重設，但無法確認舊登入已失效，請再重設一次" }, 503);
+    // 3. Old logins end and the change is audited. Setting the same password again repeats this.
+    const { data: mustChange, error: markError } = await database.rpc("staff_mark_password_set", {
+      p_actor: profile.auth_user_id, p_user_id: body.user_id,
+    });
+    if (markError) {
+      if (lostAccess(markError)) return lostAccessResponse();
+      console.error("Failed to end logins after setting a password", markError);
+      return response({ error: "密碼已設定，但無法確認舊登入已失效，請再設定一次" }, 503);
     }
-    return response({ password });
+    return response({ success: true, must_change_password: mustChange === true });
+  }
+
+  if (body.action === "update_staff") {
+    if (!isUuid(body.user_id)) return response({ error: "INVALID_REQUEST" }, 400);
+    const username = String(body.username ?? "").toLowerCase();
+    const displayName = String(body.display_name ?? "").trim();
+    if (!validUsername(username) || !displayName || displayName.length > 100) {
+      return response({ error: "請檢查帳號資料" }, 400);
+    }
+    const currentUsername = async () => {
+      const { data, error } = await database.from("staff_profiles")
+        .select("username").eq("auth_user_id", body.user_id).maybeSingle();
+      if (error) throw error;
+      return data?.username;
+    };
+    let before;
+    try {
+      before = await currentUsername();
+    } catch (error) {
+      console.error("Failed to load staff profile", error);
+      return response({ error: "帳號更新失敗" }, 503);
+    }
+    if (before === undefined) return response({ error: "找不到帳號" }, 404);
+    // The Auth login is username@accounts.invalid, so a new name changes it too.
+    const renamed = before !== username;
+    if (renamed) {
+      const { error: emailError } = await database.auth.admin.updateUserById(body.user_id, {
+        email: `${username}@accounts.invalid`, email_confirm: true,
+      });
+      if (emailError?.code === "email_exists") {
+        const { data: owner, error: ownerError } = await database.from("staff_profiles")
+          .select("auth_user_id").eq("username", username).maybeSingle();
+        if (ownerError) {
+          console.error("Failed to check staff username", ownerError);
+          return response({ error: "帳號更新失敗" }, 503);
+        }
+        if (owner) return response({ error: "帳號名稱已被使用" }, 409);
+        console.error("Auth user exists without staff profile", username);
+        return response({ error: "帳號名稱已被使用；若名單中沒有此帳號，請聯絡維護人員清除" }, 409);
+      }
+      if (emailError) {
+        console.error("Failed to rename Auth user", emailError);
+        return response({ error: "帳號更新失敗" }, 503);
+      }
+    }
+    const { error } = await database.rpc("staff_update_profile", {
+      p_actor: profile.auth_user_id, p_user_id: body.user_id, p_username: username, p_display_name: displayName,
+    });
+    // The profile decides. Every save (not only a rename) compares the Auth login with the name the
+    // profile holds now and fixes it if they differ, so saving again repairs a sync that failed or
+    // lost a race with another admin's rename.
+    {
+      try {
+        const settled = await currentUsername();
+        const { data: authUser, error: authError } = await database.auth.admin.getUserById(body.user_id);
+        if (authError) throw authError;
+        if (settled && authUser.user?.email !== `${settled}@accounts.invalid`) {
+          const { error: syncError } = await database.auth.admin.updateUserById(body.user_id, {
+            email: `${settled}@accounts.invalid`, email_confirm: true,
+          });
+          if (syncError) throw syncError;
+        }
+      } catch (syncError) {
+        console.error("Auth login may not match the staff profile; manual check needed", body.user_id, syncError);
+        return response({ error: "帳號更新結果無法確認，請重新整理名單；若登入失敗請聯絡維護人員" }, 503);
+      }
+    }
+    if (error) {
+      if (lostAccess(error)) return lostAccessResponse();
+      if (error.message?.includes("USERNAME_TAKEN")) return response({ error: "帳號名稱已被使用" }, 409);
+      if (error.message?.includes("STAFF_NOT_FOUND")) return response({ error: "找不到帳號" }, 404);
+      if (isInputError(error)) return response({ error: "請檢查帳號資料" }, 400);
+      console.error("Failed to update staff profile", error);
+      return response({ error: "帳號更新失敗" }, 503);
+    }
+    return response({ success: true });
   }
 
   if (body.action === "set_staff_active") {
