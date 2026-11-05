@@ -35,6 +35,7 @@ test("staff registration edit sends all published activity choices", async ({ pa
   await page.locator('#login-form input[name="password"]').fill("test-password");
   await page.getByRole("button", { name: "登入" }).click();
   await page.getByRole("button", { name: "查看／處理" }).click();
+  await page.getByRole("button", { name: "修改登記資料" }).click();
   await page.locator('#edit-registration-form input[name="full_name"]').fill("修改後姓名");
   await page.locator('#edit-registration-form input[name="activity_1"][value="true"]').check();
   await page.getByRole("button", { name: "儲存登記" }).click();
@@ -304,6 +305,7 @@ test("editing an old registration leaves a newer activity unanswered", async ({ 
   await login(page);
   await page.getByRole("button", { name: "查看／處理" }).click();
   await expect(page.locator("#detail-choices")).toContainText("（未回覆，可留空）");
+  await page.getByRole("button", { name: "修改登記資料" }).click();
   await page.locator('#edit-registration-form input[name="full_name"]').fill("修改後姓名");
   await page.getByRole("button", { name: "儲存登記" }).click();
   await expect(page.locator("#message")).toHaveText("登記資料已儲存。");
@@ -621,6 +623,7 @@ test("staff edit a hosting answer, and an existing answer cannot be cleared", as
   await expect(hosting.getByLabel("可以接待幾位？")).toHaveValue("2");
   await expect(hosting.getByLabel("接待對象")).toHaveValue("brother");
   await expect(hosting.getByLabel("2/19 或之前可以配搭接機幾位？")).toHaveValue("1");
+  await page.getByRole("button", { name: "修改登記資料" }).click();
   await hosting.getByLabel("可以接待幾位？").selectOption("4");
   await hosting.getByLabel("接待對象").selectOption({ label: "夫婦" });
   await hosting.getByLabel("2/19 或之前可以配搭接機幾位？").selectOption("5");
@@ -631,6 +634,7 @@ test("staff edit a hosting answer, and an existing answer cannot be cleared", as
 
   // An unanswered registration may stay unanswered; pickup waits for an answer, so it cannot be lost.
   await page.getByRole("row", { name: /未回覆接待/ }).getByRole("button", { name: "查看／處理" }).click();
+  await page.getByRole("button", { name: "修改登記資料" }).click();
   await expect(hosting.locator('input[name="hosting_status"]').first()).not.toHaveAttribute("required", "");
   await expect(hosting.getByLabel("2/19 或之前可以配搭接機幾位？")).toBeDisabled();
   await page.getByRole("button", { name: "儲存登記" }).click();
@@ -651,9 +655,68 @@ test("a void registration shows its hosting answer with every control disabled",
   await expect(hosting.getByLabel("可以接待幾位？")).toHaveValue("2");
   await expect(hosting.getByLabel("可以接待幾位？")).toBeDisabled();
   await expect(hosting.getByLabel("接待對象")).toBeDisabled();
-  // An active registration opened next is editable again.
+  // A void registration can only be viewed.
+  await expect(page.getByRole("button", { name: "修改登記資料" })).toBeHidden();
+  // An active registration opened next can be edited again.
   await page.getByRole("row", { name: /接待夫婦/ }).getByRole("button", { name: "查看／處理" }).click();
+  await page.getByRole("button", { name: "修改登記資料" }).click();
   await expect(hosting.getByLabel("接待對象")).toBeEnabled();
+});
+
+test("a record opens locked for viewing; 修改登記資料 unlocks it and 取消修改 restores it", async ({ page }) => {
+  let saved;
+  await mockStaff(page, "staff", (payload) => { if (payload.action === "save_registration") saved = payload; }, "測試登記", hostedRegistrations);
+  await login(page);
+  await page.getByRole("row", { name: /接待弟兄/ }).getByRole("button", { name: "查看／處理" }).click();
+  const form = page.locator("#edit-registration-form");
+  const name = form.locator('input[name="full_name"]');
+  const attend = form.locator('input[name="activity_1"][value="true"]');
+  const guests = page.locator("#detail-hosting").getByLabel("可以接待幾位？");
+  for (const control of [name, form.locator('select[name="district_id"]'), attend, guests]) await expect(control).toBeDisabled();
+  await expect(page.getByRole("button", { name: "儲存登記" })).toBeHidden();
+  // 大會匯入狀態 and 作廢 stay usable while viewing.
+  await expect(page.locator('#import-form select[name="status"]')).toBeEnabled();
+  await expect(page.locator('#void-form input[name="reason"]')).toBeEnabled();
+
+  const startEdit = page.getByRole("button", { name: "修改登記資料" });
+  await startEdit.click();
+  await expect(startEdit).toBeHidden();
+  // The pressed button hides, so focus moves to the first field rather than the top of the page.
+  await expect(name).toBeFocused();
+  await name.fill("改到一半");
+  await guests.selectOption("5");
+  await page.getByRole("button", { name: "取消修改" }).click();
+  await expect(startEdit).toBeFocused();
+  await expect(name).toHaveValue("接待弟兄");
+  await expect(name).toBeDisabled();
+  await expect(guests).toHaveValue("2");
+  await expect(page.getByRole("button", { name: "儲存登記" })).toBeHidden();
+  expect(saved).toBeUndefined();
+
+  // Saving goes back to viewing.
+  await page.getByRole("button", { name: "修改登記資料" }).click();
+  await page.getByRole("button", { name: "儲存登記" }).click();
+  await expect(page.locator("#message")).toHaveText("登記資料已儲存。");
+  await expect(name).toBeDisabled();
+  await expect(startEdit).toBeVisible();
+  await expect(startEdit).toBeFocused();
+});
+
+test("the registration list shows 10 rows a page and names the import column 匯入大會", async ({ page }) => {
+  const pages = [];
+  await mockStaff(page, "staff", (payload) => {
+    // before_serial requests are the full export for statistics, not the paged list.
+    if (payload.action === "list_registrations" && payload.before_serial === undefined) pages.push(payload.page);
+  }, "測試登記", {
+    list_registrations: () => ({ json: { count: 11, registrations: [] } }),
+  });
+  await login(page);
+  await expect(page.locator("#registration-table th").nth(4)).toHaveText("匯入大會");
+  await expect(page.locator("#next-page")).toBeEnabled();
+  await page.locator("#next-page").click();
+  await expect(page.locator("#page-number")).toHaveText("第 2 頁");
+  await expect(page.locator("#next-page")).toBeDisabled();
+  expect(pages).toEqual([0, 1]);
 });
 
 test("補登 must answer hosting while the public survey is open", async ({ page }) => {
@@ -782,17 +845,21 @@ test("staff do not see the hosting settings card", async ({ page }) => {
   await expect(page.locator("#admin-hosting")).toBeHidden();
 });
 
-test("hosting sits right of the activity choices on wide screens and below them on phones", async ({ page }) => {
+test("姓名｜區 and hosting sit left of the activity choices on wide screens and above them on phones", async ({ page }) => {
   await mockStaff(page, "staff", () => {}, "測試登記", hostedRegistrations);
   await login(page);
   await page.getByRole("row", { name: /接待弟兄/ }).getByRole("button", { name: "查看／處理" }).click();
   const { width } = page.viewportSize();
-  // Both boxes in one call: opening the record scrolls smoothly, so separate reads would disagree.
-  const [left, right] = await page.locator("#edit-registration-form").evaluate((form) =>
-    [".registration-main", ".hosting-panel"].map((selector) => {
+  // All boxes in one call: opening the record scrolls smoothly, so separate reads would disagree.
+  const [left, right, name, district, hosting] = await page.locator("#edit-registration-form").evaluate((form) =>
+    [".registration-main", ".activity-panel", 'input[name="full_name"]', 'select[name="district_id"]', ".hosting-panel"].map((selector) => {
       const { x, y, width: w, height } = form.querySelector(selector).getBoundingClientRect();
       return { x, y, width: w, height };
     }));
+  // 區 sits beside 姓名, and hosting follows them in the same column.
+  expect(Math.abs(district.y + district.height / 2 - (name.y + name.height / 2))).toBeLessThan(4);
+  expect(district.x).toBeGreaterThan(name.x + name.width - 1);
+  expect(hosting.y).toBeGreaterThan(name.y + name.height - 1);
   if (width >= 896) {
     expect(right.x).toBeGreaterThan(left.x + left.width - 1);
     expect(Math.abs(right.y - left.y)).toBeLessThan(2);
@@ -973,6 +1040,12 @@ test("staff saving a sign-up from before a restriction confirm that it becomes �
   await login(page);
   await page.getByRole("button", { name: "查看／處理" }).click();
   const lunch = page.locator('#detail-choices [data-activity="1"]');
+  // Viewing shows what is stored: the old sign-up and its identity, with no revert yet.
+  await expect(lunch.locator('input[value="true"]')).toBeChecked();
+  await expect(lunch.locator(".audience-reverted")).toBeHidden();
+  await expect(page.locator("#detail-choices .meal-identity")).toBeVisible();
+  await expect(page.locator('#detail-choices input[name="meal_identity"][value="general"]')).toBeChecked();
+  await page.getByRole("button", { name: "修改登記資料" }).click();
   await expect(lunch.locator('input[value="false"]')).toBeChecked();
   await expect(lunch.locator('input[value="true"]')).toBeDisabled();
   await expect(lunch.locator(".audience-reverted")).toHaveText("不符報名對象，已改為不參加。");
@@ -1003,6 +1076,7 @@ test("an unanswered restricted activity stays 未回覆 when staff save an older
   await page.getByRole("button", { name: "查看／處理" }).click();
   const lunch = page.locator('#detail-choices [data-activity="1"]');
   await expect(lunch).toContainText("（未回覆，可留空）");
+  await page.getByRole("button", { name: "修改登記資料" }).click();
   await expect(lunch.locator("input:checked")).toHaveCount(0);
   await expect(lunch.locator('input[value="true"]')).toBeDisabled();
   await page.getByRole("button", { name: "儲存登記" }).click();

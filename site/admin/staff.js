@@ -14,6 +14,9 @@ let count = 0;
 let search = "";
 let visibleRegistrations = [];
 let selectedRegistration;
+let editingRegistration = false;
+// Must match the page size of list_registrations in the staff Edge Function.
+const REGISTRATIONS_PER_PAGE = 10;
 let editingStaff = null;
 const adminSections = ["#admin-accounts", "#admin-settings", "#admin-hosting", "#admin-activities", "#admin-program"];
 
@@ -122,6 +125,7 @@ function clearSession() {
   document.querySelector("#stats-summary").textContent = "";
   document.querySelector("#registration-detail").hidden = true;
   selectedRegistration = null;
+  editingRegistration = false;
   visibleRegistrations = [];
 }
 
@@ -359,7 +363,7 @@ async function loadRegistrations() {
   document.querySelector("#registration-count").textContent = `共 ${count} 筆`;
   document.querySelector("#page-number").textContent = `第 ${page + 1} 頁`;
   document.querySelector("#previous-page").disabled = page === 0;
-  document.querySelector("#next-page").disabled = (page + 1) * 100 >= count;
+  document.querySelector("#next-page").disabled = (page + 1) * REGISTRATIONS_PER_PAGE >= count;
   const rows = document.querySelector("#registration-rows");
   rows.replaceChildren();
   visibleRegistrations = result.registrations;
@@ -554,7 +558,12 @@ function renderChoiceFields(container, choices = new Map(), requireAll = true, i
     const title = document.createElement("strong");
     title.textContent = activity.title;
     item.append(title);
-    if (!requireAll && !choices.has(activity.id)) item.append("（未回覆，可留空）");
+    if (!requireAll && !choices.has(activity.id)) {
+      const unanswered = document.createElement("span");
+      unanswered.className = "hint";
+      unanswered.textContent = "（未回覆，可留空）";
+      item.append(unanswered);
+    }
     for (const [value, label] of [["true", "參加"], ["false", "不參加"]]) {
       const option = document.createElement("label");
       const radio = document.createElement("input");
@@ -577,8 +586,8 @@ function syncNewMeals() {
   Meals.sync(document.querySelector("#new-registration-choices"), currentActivities(), checkedStatus("#new-registration-hosting"));
 }
 function syncDetailMeals() {
-  // A void row stays fully disabled; sync would enable allowed choices again.
-  if (selectedRegistration?.record_status !== "active") return;
+  // Only while editing: sync would re-enable allowed choices and show what saving would change.
+  if (!editingRegistration) return;
   Meals.sync(document.querySelector("#detail-choices"), currentActivities(), checkedStatus("#detail-hosting"));
 }
 
@@ -610,8 +619,12 @@ function choicesFromForm(form) {
   return Meals.choices(form, currentActivities());
 }
 
-function openRegistration(registration) {
+// Opens in view mode, every field locked, so looking at a record cannot change it by a stray tap;
+// 修改登記資料 reopens it with editing = true. Reopening from the stored record also undoes any edit.
+function openRegistration(registration, editing = false) {
+  const switching = selectedRegistration?.id !== registration.id;
   selectedRegistration = registration;
+  editingRegistration = editing && registration.record_status === "active";
   const detail = document.querySelector("#registration-detail");
   detail.hidden = false;
   document.querySelector("#detail-title").textContent = `登記 #${registration.serial_no}｜${registration.full_name}`;
@@ -631,19 +644,24 @@ function openRegistration(registration) {
   document.querySelector("#import-form").elements.status.value = registration.import_status;
   // Only active rows can be edited; a historical cancelled row can still be voided.
   const isActive = registration.record_status === "active";
-  form.querySelectorAll("input, select, button").forEach((control) => control.disabled = !isActive);
+  form.querySelectorAll("input, select, button").forEach((control) => control.disabled = !editingRegistration);
+  document.querySelector("#start-registration-edit").hidden = !isActive || editingRegistration;
+  document.querySelector("#registration-edit-buttons").hidden = !editingRegistration;
   // Rendered after the loop above, which would otherwise re-enable the hidden hosting fields.
   // Like an activity, an existing answer cannot go back to 未回覆, but an unanswered one may stay so.
   const hosting = hostingOf(registration);
   const hostingFields = document.querySelector("#detail-hosting");
   Hosting.render(hostingFields, hosting, hosting !== null);
   // The fieldset disables every hosting control, whatever its tag; sync() cannot re-enable them.
-  hostingFields.closest("fieldset").disabled = !isActive;
+  hostingFields.closest("fieldset").disabled = !editingRegistration;
+  // In view mode sync() does not run, so show the stored identity whenever the choices need one.
+  const identity = document.querySelector("#detail-choices .meal-identity");
+  if (identity) identity.hidden = !Meals.needsIdentity(currentActivities(), registration.registration_choices);
   syncDetailMeals();
   const voidForm = document.querySelector("#void-form");
   voidForm.reset();
   voidForm.querySelectorAll("input, button").forEach((control) => control.disabled = registration.record_status === "void");
-  detail.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (switching) detail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function refreshRegistration() {
@@ -997,6 +1015,8 @@ document.querySelector("#edit-registration-form").addEventListener("submit", asy
       meal_identity: Meals.readIdentity(document.querySelector("#detail-choices")),
     });
     await refreshRegistration();
+    // Back in view mode the save button is hidden; focus the way back into editing.
+    document.querySelector("#start-registration-edit").focus();
     showMessage("登記資料已儲存。");
   } catch (error) { showMessage(error.message, true); }
 });
@@ -1007,6 +1027,15 @@ document.querySelector("#new-registration-form").addEventListener("input", () =>
   syncNewMeals();
 });
 document.querySelector("#edit-registration-form").addEventListener("input", syncDetailMeals);
+// Each button hides itself, so focus moves to where the person continues instead of falling to the page.
+document.querySelector("#start-registration-edit").addEventListener("click", () => {
+  openRegistration(selectedRegistration, true);
+  document.querySelector('#edit-registration-form input[name="full_name"]').focus();
+});
+document.querySelector("#cancel-registration-edit").addEventListener("click", () => {
+  openRegistration(selectedRegistration);
+  document.querySelector("#start-registration-edit").focus();
+});
 document.querySelector("#new-registration-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
