@@ -46,7 +46,6 @@ main.wide .registration-form { max-width: none; }
 .hosting-panel { padding: 1rem; border: 1px solid #d8e1dc; border-radius: .75rem; background: #f9fbfa; }
 .hosting-panel > legend { float: left; width: 100%; margin-bottom: .5rem; padding: 0; }
 .hosting-panel > legend ~ * { clear: left; }
-.hosting-panel .hosting-options { flex-direction: column; gap: 0; }
 /* .staff-form label stacks a control under its text; radio choices keep the button beside it. */
 .staff-form .hosting-options label { display: flex; align-items: center; gap: .4rem; }
 .hosting-panel .hosting-details > label { display: grid; gap: .3rem; }
@@ -54,11 +53,36 @@ main.wide .registration-form { max-width: none; }
 .staff-form .hosting-pickup { display: grid; gap: .3rem; margin-top: .75rem; }
 @media (min-width: 56rem) {
   .registration-columns { grid-template-columns: minmax(0, 36rem) minmax(16rem, 1fr); }
+  /* Registration records: 姓名｜區 and 開家接待 on the left, the activity list on the right. */
+  .registration-columns.registration-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); }
 }
 
-.staff-choice { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; padding: .6rem 0; border-bottom: 1px solid #eef2f0; }
-.staff-choice strong, .staff-choice .hint { width: 100%; }
-.staff-choice label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; }
+/* One line per activity: title, then 參加 and 不參加; notes run in small type underneath. */
+.staff-choice { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: 1.25rem;
+  padding: .45rem 0; border-bottom: 1px solid #eef2f0; }
+.staff-choice > strong { grid-area: 1 / 1; }
+.staff-choice > label:nth-of-type(1) { grid-area: 1 / 2; }
+.staff-choice > label:nth-of-type(2) { grid-area: 1 / 3; }
+.staff-choice > :not(strong, label) { grid-column: 1 / -1; margin: 0; font-size: .85rem; }
+.staff-choice label, .activity-panel .meal-identity label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; }
+.activity-panel .meal-identity { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 1.25rem;
+  padding: .45rem 0; }
+.activity-panel .meal-identity .activity-options { grid-area: 1 / 2; gap: 0 1.25rem; }
+.activity-panel .meal-identity .hint { grid-column: 1 / -1; margin: 0; font-size: .85rem; }
+
+/* min-height keeps the form from jumping up when 修改登記資料 hides during an edit. */
+.detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem;
+  min-height: 3.5rem; margin-bottom: .75rem; }
+.detail-head h2 { margin: .5rem 0; }
+.detail-head button { margin-top: 0; }
+/* 大會匯入狀態 and 作廢 side by side under the record, so neither needs a long scroll. */
+.detail-cards { display: grid; gap: 1rem; margin-top: 1.5rem; }
+.mini-card { padding: 1rem; border: 1px solid #d8e1dc; border-radius: .75rem; }
+.card .mini-card h3 { margin: 0 0 .5rem; padding: 0; border: 0; }
+.mini-card .hint { margin: 0 0 .5rem; }
+@media (min-width: 56rem) {
+  .detail-cards { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: start; }
+}
 
 .table-scroll { overflow-x: auto; margin: .5rem 0 1rem; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }

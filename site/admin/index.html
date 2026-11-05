@@ -56,46 +56,62 @@
             <button type="submit">搜尋</button>
           </form>
           <p id="registration-count"></p>
-          <div class="table-scroll"><table id="registration-table"><thead><tr><th>流水號</th><th>姓名</th><th>區</th><th>狀態</th><th>匯入</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="registration-rows"></tbody></table></div>
+          <div class="table-scroll"><table id="registration-table"><thead><tr><th>流水號</th><th>姓名</th><th>區</th><th>狀態</th><th>匯入大會</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="registration-rows"></tbody></table></div>
           <div class="staff-actions pager"><button id="previous-page" type="button" class="secondary">上一頁</button><span id="page-number"></span><button id="next-page" type="button" class="secondary">下一頁</button></div>
         </section>
 
         <section id="registration-detail" class="card" hidden>
-          <h2 id="detail-title">登記資料</h2>
+          <div class="detail-head">
+            <h2 id="detail-title">登記資料</h2>
+            <button id="start-registration-edit" type="button" class="secondary">修改登記資料</button>
+          </div>
           <form id="edit-registration-form" class="staff-form registration-form">
-            <div class="registration-columns">
+            <div class="registration-columns registration-split">
               <div class="registration-main">
-                <label>姓名<input name="full_name" maxlength="100" required /></label>
-                <label>區<select name="district_id" required></select></label>
-                <fieldset><legend>公開活動選擇</legend><div id="detail-choices"></div></fieldset>
+                <div class="identity-fields">
+                  <label>姓名<input name="full_name" maxlength="100" required /></label>
+                  <label>區<select name="district_id" required></select></label>
+                </div>
+                <fieldset class="hosting-panel"><legend>開家接待</legend><div id="detail-hosting"></div></fieldset>
               </div>
-              <fieldset class="hosting-panel"><legend>開家接待</legend><div id="detail-hosting"></div></fieldset>
+              <fieldset class="activity-panel"><legend>公開活動選擇</legend><div id="detail-choices"></div></fieldset>
             </div>
-            <button type="submit">儲存登記</button>
+            <div class="form-buttons" id="registration-edit-buttons" hidden>
+              <button type="submit">儲存登記</button>
+              <button id="cancel-registration-edit" type="button" class="secondary">取消修改</button>
+            </div>
           </form>
-          <h3>大會匯入狀態</h3>
-          <form id="import-form" class="staff-search inline-form">
-            <label>目前狀態<select name="status"><option value="pending">待匯入</option><option value="imported">已匯入</option><option value="reimport_needed">需重新匯入</option></select></label>
-            <button type="submit">更新匯入狀態</button>
-          </form>
-          <h3>作廢</h3>
-          <p class="hint">作廢後不計入統計與 CSV，同一姓名與區可以重新登記；頁面上無法恢復。</p>
-          <form id="void-form" class="staff-search inline-form">
-            <label>作廢原因（例如填錯、重複登記、不參加）<input name="reason" maxlength="200" required /></label>
-            <button type="submit" class="danger">作廢此登記</button>
-          </form>
+          <div class="detail-cards">
+            <section class="mini-card">
+              <h3>大會匯入狀態</h3>
+              <form id="import-form" class="staff-search inline-form">
+                <label>目前狀態<select name="status"><option value="pending">待匯入</option><option value="imported">已匯入</option><option value="reimport_needed">需重新匯入</option></select></label>
+                <button type="submit">更新匯入狀態</button>
+              </form>
+            </section>
+            <section class="mini-card">
+              <h3>作廢</h3>
+              <p class="hint">作廢後不計入統計與 CSV，同一姓名與區可以重新登記；頁面上無法恢復。</p>
+              <form id="void-form" class="staff-search inline-form">
+                <label>作廢原因（例如填錯、重複登記、不參加）<input name="reason" maxlength="200" required /></label>
+                <button type="submit" class="danger">作廢此登記</button>
+              </form>
+            </section>
+          </div>
         </section>
 
         <section id="section-new" class="card">
           <h2>補登</h2>
           <form id="new-registration-form" class="staff-form registration-form">
-            <div class="registration-columns">
+            <div class="registration-columns registration-split">
               <div class="registration-main">
-                <label>姓名<input name="full_name" maxlength="100" required /></label>
-                <label>區<select name="district_id" required></select></label>
-                <fieldset><legend>公開活動選擇</legend><div id="new-registration-choices"></div></fieldset>
+                <div class="identity-fields">
+                  <label>姓名<input name="full_name" maxlength="100" required /></label>
+                  <label>區<select name="district_id" required></select></label>
+                </div>
+                <fieldset class="hosting-panel"><legend>開家接待</legend><div id="new-registration-hosting"></div></fieldset>
               </div>
-              <fieldset class="hosting-panel"><legend>開家接待</legend><div id="new-registration-hosting"></div></fieldset>
+              <fieldset class="activity-panel"><legend>公開活動選擇</legend><div id="new-registration-choices"></div></fieldset>
             </div>
             <button type="submit">建立補登</button>
           </form>

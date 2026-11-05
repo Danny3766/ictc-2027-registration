@@ -166,7 +166,8 @@ export async function handler(request) {
       .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),meal_identity,registration_hosting(status,guest_type,guest_count,pickup_count)",
         beforeSerial === null ? { count: "exact" } : undefined)
       .order("serial_no", { ascending: false });
-    query = beforeSerial === null ? query.range(page * 100, page * 100 + 99)
+    // 10 rows a page, matching REGISTRATIONS_PER_PAGE in site/admin/staff.js.
+    query = beforeSerial === null ? query.range(page * 10, page * 10 + 9)
       : query.lt("serial_no", beforeSerial).limit(500);
     if (body.search) {
       if (typeof body.search !== "string" || body.search.length > 100) return response({ error: "INVALID_REQUEST" }, 400);
