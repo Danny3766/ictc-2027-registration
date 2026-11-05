@@ -28,6 +28,21 @@ function lostAccess(error) {
 }
 const lostAccessResponse = () => response({ error: "帳號權限已變更，請重新登入" }, 403);
 
+// Same status codes as the public registration function.
+function mealResponse(error) {
+  if (error?.message?.includes("MEAL_IDENTITY_REQUIRED")) return response({ error: "請選擇用餐身分" }, 400);
+  if (error?.message?.includes("INVALID_MEAL_IDENTITY")) return response({ error: "請檢查用餐身分" }, 400);
+  if (error?.message?.includes("AUDIENCE_RESTRICTED")) {
+    return response({ error: "有活動限有開家接待的聖徒報名；如需例外，請管理員先把該活動的報名對象改為所有人" }, 400);
+  }
+  return null;
+}
+
+// Left out (or null) means no answer; anything else must be one of the two codes.
+export function validMealIdentity(value) {
+  return value === undefined || value === null || value === "general" || value === "student";
+}
+
 function projectKey(name, fallback) {
   try {
     return JSON.parse(Deno.env.get(name) ?? "{}").default ?? Deno.env.get(fallback);
@@ -148,7 +163,7 @@ export async function handler(request) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }
     let query = database.from("registrations")
-      .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),registration_hosting(status,guest_type,guest_count,pickup_count)",
+      .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),meal_identity,registration_hosting(status,guest_type,guest_count,pickup_count)",
         beforeSerial === null ? { count: "exact" } : undefined)
       .order("serial_no", { ascending: false });
     query = beforeSerial === null ? query.range(page * 100, page * 100 + 99)
@@ -171,7 +186,7 @@ export async function handler(request) {
     const [settings, districts, activities, program] = await Promise.all([
       database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_lookup_open,is_hosting_open,hosting_description").single(),
       database.from("districts").select("id,name,sort_order").order("sort_order"),
-      database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,is_published,sort_order").order("sort_order"),
+      database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,student_fee_amount,cost_amount,audience,audience_note,is_published,sort_order").order("sort_order"),
       database.from("program_items").select("id,event_date,start_time,end_time,title,note,sort_order,is_visible").order("sort_order"),
     ]);
     if ([settings, districts, activities, program].some((item) => item.error)) {
@@ -183,10 +198,12 @@ export async function handler(request) {
 
   if (["save_registration", "set_import_status", "void_registration"].includes(body.action)) {
     if (!isUuid(body.registration_id)) return response({ error: "INVALID_REQUEST" }, 400);
+    if (!validMealIdentity(body.meal_identity)) return response({ error: "請檢查用餐身分" }, 400);
     const operation = {
       save_registration: ["staff_update_registration", {
         p_registration_id: body.registration_id, p_full_name: body.full_name,
         p_district_id: body.district_id, p_choices: body.choices, p_hosting: body.hosting ?? null,
+        p_meal_identity: body.meal_identity ?? null,
       }],
       set_import_status: ["staff_set_import_status", {
         p_registration_id: body.registration_id, p_status: body.status,
@@ -198,6 +215,8 @@ export async function handler(request) {
     const { data, error } = await database.rpc(operation[0], { p_actor: profile.auth_user_id, ...operation[1] });
     if (error) {
       if (lostAccess(error)) return lostAccessResponse();
+      const mealError = mealResponse(error);
+      if (mealError) return mealError;
       if (error.message?.includes("ALREADY_VOID")) return response({ error: "此紀錄已作廢" }, 409);
       if (error.message?.includes("NAME_TAKEN")) return response({ error: "此姓名與區已有有效登記" }, 409);
       if (error.message?.includes("INVALID_HOSTING")) return response({ error: "請檢查開家接待內容" }, 400);
@@ -212,15 +231,18 @@ export async function handler(request) {
 
   if (body.action === "create_registration") {
     if (!isUuid(body.create_request_id)) return response({ error: "INVALID_REQUEST" }, 400);
+    if (!validMealIdentity(body.meal_identity)) return response({ error: "請檢查用餐身分" }, 400);
     const { data, error } = await database.rpc("staff_create_registration", {
       p_actor: profile.auth_user_id, p_request_id: body.create_request_id,
       p_full_name: body.full_name, p_district_id: body.district_id, p_choices: body.choices,
-      p_hosting: body.hosting ?? null,
+      p_hosting: body.hosting ?? null, p_meal_identity: body.meal_identity ?? null,
     });
     if (!error && data?.length === 1) return response({ serial_no: data[0].serial_no }, 201);
     if (error?.message?.includes("DUPLICATE_REQUEST")) return response({ error: "此補登已建立，請重新整理名單確認" }, 409);
     if (error?.message?.includes("NAME_TAKEN")) return response({ error: "此姓名與區已有有效登記" }, 409);
     if (lostAccess(error)) return lostAccessResponse();
+    const mealError = mealResponse(error);
+    if (mealError) return mealError;
     if (error?.message?.includes("HOSTING_REQUIRED")) {
       return response({ error: "開家接待調查已開放，請回答開家接待後再建立補登；看不到接待欄位時請重新整理頁面", code: "HOSTING_REQUIRED" }, 409);
     }

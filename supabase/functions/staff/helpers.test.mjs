@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isWeakPassword, nameKey, sameUser, validPassword, validUsername } from "./index.ts";
+import { isWeakPassword, nameKey, sameUser, validPassword, validUsername, validMealIdentity } from "./index.ts";
 
 test("staff password length is bounded before privileged update", () => {
   assert.equal(validPassword("a".repeat(11)), false);
@@ -38,4 +38,9 @@ test("only Auth's weak_password code counts as a weak password", () => {
   assert.equal(isWeakPassword({ code: "weak_password", status: 422 }), true);
   assert.equal(isWeakPassword({ code: "validation_failed", status: 422 }), false);
   assert.equal(isWeakPassword(null), false);
+});
+
+test("a meal identity is left out, null, or one of the two codes", () => {
+  for (const value of [undefined, null, "general", "student"]) assert.equal(validMealIdentity(value), true);
+  for (const value of ["", "Student", "teacher", 1, true, {}, ["student"]]) assert.equal(validMealIdentity(value), false);
 });

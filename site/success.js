@@ -13,9 +13,9 @@ if (!data?.full_name) {
     return item;
   }));
   // Older saved summaries have no hosting line; the registration page only adds one while hosting is open.
-  if (data.hosting) {
+  for (const line of [data.meal_identity, data.hosting].filter(Boolean)) {
     const item = document.createElement("li");
-    item.textContent = data.hosting;
+    item.textContent = line;
     document.querySelector("#summary-choices").append(item);
   }
 }

@@ -57,7 +57,7 @@ main.wide .registration-form { max-width: none; }
 }
 
 .staff-choice { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; padding: .6rem 0; border-bottom: 1px solid #eef2f0; }
-.staff-choice strong { width: 100%; }
+.staff-choice strong, .staff-choice .hint { width: 100%; }
 .staff-choice label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; }
 
 .table-scroll { overflow-x: auto; margin: .5rem 0 1rem; }
