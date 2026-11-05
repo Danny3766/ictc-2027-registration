@@ -54,7 +54,8 @@ fieldset { padding: 0; border: 0; }
 .hosting-options input { width: auto; min-height: auto; margin: 0; }
 .hosting-details { margin: .5rem 0 0; padding: .25rem 0 .25rem 1rem; border-left: 3px solid #cfe0d7; }
 .hosting-details > label { margin: .75rem 0; }
-.hosting-details select { max-width: 12rem; display: block; }
+.hosting-details select, .hosting-pickup select { max-width: 12rem; display: block; }
+.hosting-pickup { display: block; margin: .75rem 0; }
 .event-note { white-space: pre-line; overflow-wrap: anywhere; }
 .hint { color: #59655f; font-size: .95rem; }
 .actions { display: grid; gap: .75rem; }
