@@ -328,19 +328,27 @@ function setBusy(form, busy) {
 }
 
 // Built from text nodes so the admin's note can never become markup; only https:// links are clickable.
-// A link is ASCII URL characters only, so Chinese text written right after it stays text, and a
-// trailing . , ; : ! ? ends the sentence, not the link.
+// A bare link is ASCII URL characters only, so Chinese text written right after it stays text, and a
+// trailing . , ; : ! ? ends the sentence, not the link. [label](https://...) shows the label as the link.
+const noteLinkPattern = /\[([^\[\]\n]{1,200})\]\((https:\/\/[^\s()]+)\)|(https:\/\/[\w\-.~:/?#[\]@!$&*+,;=%]*[\w\-~/#[\]@$&*+=%])/g;
+
 function showEventNote(text) {
   const note = document.querySelector("#event-note");
-  note.replaceChildren(...String(text ?? "").split(/(https:\/\/[\w\-.~:/?#[\]@!$&*+,;=%]*[\w\-~/#[\]@$&*+=%])/).map((part, index) => {
-    if (index % 2 === 0) return document.createTextNode(part);
+  const value = String(text ?? "");
+  const parts = [];
+  let last = 0;
+  for (const match of value.matchAll(noteLinkPattern)) {
+    parts.push(document.createTextNode(value.slice(last, match.index)));
     const link = document.createElement("a");
-    link.href = part;
-    link.textContent = part;
+    link.href = match[2] ?? match[3];
+    link.textContent = match[1] ?? match[3];
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    return link;
-  }));
+    parts.push(link);
+    last = match.index + match[0].length;
+  }
+  parts.push(document.createTextNode(value.slice(last)));
+  note.replaceChildren(...parts);
   note.hidden = !text;
 }
 

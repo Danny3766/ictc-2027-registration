@@ -682,6 +682,23 @@ test("the site note shows under the address as text with only https links clicka
   expect(await page.locator("#event-meta + #event-note").count()).toBe(1);
 });
 
+test("the site note turns [label](https://...) into a link that shows the label", async ({ page }) => {
+  const note = "大眾運輸：[交通資訊](https://example.org/transport/guide_1/)\n[不安全](javascript:alert(1)) [http 不轉](http://example.org/) 地圖 https://maps.app.goo.gl/abc123";
+  await page.route("**/functions/v1/registration", (route) => route.fulfill({
+    json: { ...openPage(), settings: { ...openPage().settings, event_note: note } },
+  }));
+  await page.goto("/");
+  const shown = page.locator("#event-note");
+  const links = shown.locator("a");
+  await expect(links).toHaveCount(2);
+  await expect(links.nth(0)).toHaveText("交通資訊");
+  await expect(links.nth(0)).toHaveAttribute("href", "https://example.org/transport/guide_1/");
+  await expect(links.nth(1)).toHaveAttribute("href", "https://maps.app.goo.gl/abc123");
+  // Only https links become links; the other bracket forms stay as written.
+  await expect(shown).toContainText("大眾運輸：交通資訊");
+  await expect(shown).toContainText("[不安全](javascript:alert(1)) [http 不轉](http://example.org/)");
+});
+
 test("an empty site note leaves nothing under the address", async ({ page }) => {
   await page.route("**/functions/v1/registration", (route) => route.fulfill({ json: openPage() }));
   await page.goto("/");
