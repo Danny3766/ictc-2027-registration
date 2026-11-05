@@ -258,6 +258,12 @@ Q43 已確認。
 - [ ] 驗收後台：網站設定右欄備註儲存、統計四種接待對象與合計、CSV 3 個接待欄位。
 - [ ] 測試站與正式站的兩個 Edge Function 都重新部署後，新增 migration 刪除 `registration_hosting.family_count`、`note` 與約束 `registration_hosting_removed_fields`。
 
+## 本次新增必要範圍：接機調查
+
+- [x] 本機完成：`202611050005_hosting_pickup.sql`、開家接待區塊的接機下拉選單（0～6，預設 0）、摘要、統計與 CSV；資料庫與 Playwright 測試通過。
+- [ ] 測試站依序：套用 `202611050005`，再部署 `staff` Edge Function，最後部署前端（staff 函式會讀 `pickup_count`，前端會送出它，都不能早於 migration）；確認既有回答的接機人數為 0。
+- [ ] 驗收公開頁與後台：每種回答都能填接機、預設 0、摘要顯示、已匯入登記改接機後需重新匯入、統計與 CSV「可接機人數」。
+
 ## 可延後項目
 
 - Cloudflare Turnstile：後續以公開設定提供 site key、伺服端 secret 驗證 token，使用新 migration 調整防護；測試與正式環境分開設定。未完成前不讓公開流程依賴 Turnstile。

@@ -599,13 +599,13 @@ const hostedRegistrations = {
   list_registrations: () => ({ json: { count: 4, registrations: [
     { id: "223e4567-e89b-42d3-a456-426614174001", serial_no: 4, full_name: "接待弟兄", district_id: 1, record_status: "active", import_status: "imported",
       registration_choices: [{ activity_id: 1, attending: true }], updated_at: "2026-11-05T00:00:00Z",
-      registration_hosting: { status: "hosting", guest_type: "brother", guest_count: 2 } },
+      registration_hosting: { status: "hosting", guest_type: "brother", guest_count: 2, pickup_count: 1 } },
     { id: "223e4567-e89b-42d3-a456-426614174002", serial_no: 3, full_name: "接待夫婦", district_id: 1, record_status: "active", import_status: "pending",
       registration_choices: [{ activity_id: 1, attending: true }], updated_at: "2026-11-05T00:00:00Z",
-      registration_hosting: { status: "hosting", guest_type: "couple", guest_count: 4 } },
+      registration_hosting: { status: "hosting", guest_type: "couple", guest_count: 4, pickup_count: 0 } },
     { id: "223e4567-e89b-42d3-a456-426614174003", serial_no: 2, full_name: "家人已登記", district_id: 1, record_status: "active", import_status: "pending",
       registration_choices: [{ activity_id: 1, attending: false }], updated_at: "2026-11-05T00:00:00Z",
-      registration_hosting: { status: "family_registered", guest_type: null, guest_count: null } },
+      registration_hosting: { status: "family_registered", guest_type: null, guest_count: null, pickup_count: 2 } },
     { id: "223e4567-e89b-42d3-a456-426614174004", serial_no: 1, full_name: "未回覆接待", district_id: 1, record_status: "active", import_status: "pending",
       registration_choices: [{ activity_id: 1, attending: false }], updated_at: "2026-11-05T00:00:00Z", registration_hosting: null },
   ] } }),
@@ -620,16 +620,19 @@ test("staff edit a hosting answer, and an existing answer cannot be cleared", as
   await expect(hosting.getByLabel("是", { exact: true })).toBeChecked();
   await expect(hosting.getByLabel("可以接待幾位？")).toHaveValue("2");
   await expect(hosting.getByLabel("接待對象")).toHaveValue("brother");
+  await expect(hosting.getByLabel("2/19 或之前可以配搭接機幾位？")).toHaveValue("1");
   await hosting.getByLabel("可以接待幾位？").selectOption("4");
   await hosting.getByLabel("接待對象").selectOption({ label: "夫婦" });
+  await hosting.getByLabel("2/19 或之前可以配搭接機幾位？").selectOption("5");
   await page.getByRole("button", { name: "儲存登記" }).click();
   await expect(page.locator("#message")).toHaveText("登記資料已儲存。");
-  expect(saved.hosting).toEqual({ status: "hosting", guest_type: "couple", guest_count: 4 });
+  expect(saved.hosting).toEqual({ status: "hosting", guest_type: "couple", guest_count: 4, pickup_count: 5 });
   await expect(hosting.locator('input[name="hosting_status"]').first()).toHaveAttribute("required", "");
 
-  // An unanswered registration may stay unanswered.
+  // An unanswered registration may stay unanswered; pickup waits for an answer, so it cannot be lost.
   await page.getByRole("row", { name: /未回覆接待/ }).getByRole("button", { name: "查看／處理" }).click();
   await expect(hosting.locator('input[name="hosting_status"]').first()).not.toHaveAttribute("required", "");
+  await expect(hosting.getByLabel("2/19 或之前可以配搭接機幾位？")).toBeDisabled();
   await page.getByRole("button", { name: "儲存登記" }).click();
   await expect.poll(() => saved.registration_id).toBe("223e4567-e89b-42d3-a456-426614174004");
   expect(saved.hosting).toBeNull();
@@ -676,7 +679,7 @@ test("補登 must answer hosting while the public survey is open", async ({ page
   await hosting.getByLabel("可以接待幾位？").selectOption("2");
   await form.getByRole("button", { name: "建立補登" }).click();
   await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
-  expect(created.hosting).toEqual({ status: "hosting", guest_type: "sister", guest_count: 2 });
+  expect(created.hosting).toEqual({ status: "hosting", guest_type: "sister", guest_count: 2, pickup_count: 0 });
   await expect(hosting.locator('input[name="hosting_status"]:checked')).toHaveCount(0);
 });
 
@@ -697,6 +700,8 @@ test("statistics count hosting answers and capacity", async ({ page }) => {
   await expect(capacity.nth(2).locator("td")).toHaveText(["姊妹", "0", "0"]);
   await expect(capacity.nth(3).locator("td")).toHaveText(["不拘", "0", "0"]);
   await expect(capacity.nth(4).locator("td")).toHaveText(["合計", "2", "6"]);
+  // Pickup counts every answer with seats, here 是 (1) and 家人已登記開家接待 (2).
+  await expect(page.locator("#hosting-pickup-stats-rows tr td")).toHaveText(["可配搭接機", "2", "3"]);
 });
 
 test("CSV adds the hosting columns", async ({ page }, testInfo) => {
@@ -706,11 +711,11 @@ test("CSV adds the hosting columns", async ({ page }, testInfo) => {
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "下載 CSV" }).click();
   const lines = (await readFile(await (await download).path(), "utf8")).split("\r\n");
-  expect(lines[0]).toMatch(/"開家接待","接待對象","可接待人數"$/);
-  expect(lines[1]).toMatch(/"是","弟兄","2"$/);
-  expect(lines[2]).toMatch(/"是","夫婦","4"$/);
-  expect(lines[3]).toMatch(/"家人已登記開家接待","",""$/);
-  expect(lines[4]).toMatch(/"未回覆","",""$/);
+  expect(lines[0]).toMatch(/"開家接待","接待對象","可接待人數","可接機人數"$/);
+  expect(lines[1]).toMatch(/"是","弟兄","2","1"$/);
+  expect(lines[2]).toMatch(/"是","夫婦","4","0"$/);
+  expect(lines[3]).toMatch(/"家人已登記開家接待","","","2"$/);
+  expect(lines[4]).toMatch(/"未回覆","","",""$/);
 });
 
 test("admins save the hosting switch and description from their own card", async ({ page }) => {
@@ -804,7 +809,7 @@ test("補登 may leave hosting unanswered while the survey is closed, until the 
   await hosting.getByLabel("否", { exact: true }).check();
   await form.getByRole("button", { name: "建立補登" }).click();
   await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
-  expect(created[1].hosting).toEqual({ status: "not_hosting", guest_type: null, guest_count: null });
+  expect(created[1].hosting).toEqual({ status: "not_hosting", guest_type: null, guest_count: null, pickup_count: 0 });
 });
 
 test("a password set for another admin must be changed at their next login", async ({ page }) => {

@@ -427,9 +427,15 @@ async function showStatistics() {
 function showHostingStatistics(registrations) {
   const answers = { hosting: 0, not_hosting: 0, family_registered: 0, unanswered: 0 };
   const capacity = Object.fromEntries(Object.keys(Hosting.guestLabels).map((type) => [type, { registrations: 0, people: 0 }]));
+  const pickup = { registrations: 0, people: 0 };
   for (const registration of registrations) {
     const answer = hostingOf(registration);
     answers[answer?.status ?? "unanswered"] += 1;
+    // Pickup is asked of everyone who answered, whatever the status.
+    if (answer?.pickup_count) {
+      pickup.registrations += 1;
+      pickup.people += answer.pickup_count;
+    }
     if (answer?.status !== "hosting") continue;
     capacity[answer.guest_type].registrations += 1;
     capacity[answer.guest_type].people += answer.guest_count;
@@ -450,6 +456,9 @@ function showHostingStatistics(registrations) {
     for (const value of [name, total.registrations, total.people]) cell(row, value);
     capacityRows.append(row);
   }
+  const pickupRow = document.createElement("tr");
+  for (const value of ["可配搭接機", pickup.registrations, pickup.people]) cell(pickupRow, value);
+  document.querySelector("#hosting-pickup-stats-rows").replaceChildren(pickupRow);
 }
 
 function csvCell(value) {
@@ -462,7 +471,7 @@ async function downloadCsv() {
   const activities = currentActivities();
   const districts = new Map(reference.districts.map((item) => [item.id, item.name]));
   const rows = [["流水號", "姓名", "區", "匯入狀態", ...activities.map((item) => item.title),
-    "開家接待", "接待對象", "可接待人數"]];
+    "開家接待", "接待對象", "可接待人數", "可接機人數"]];
   for (const registration of activeRegistrations(await allRegistrations())) {
     const choices = new Map(registration.registration_choices.map((item) => [item.activity_id, item.attending]));
     const hosting = hostingOf(registration);
@@ -472,7 +481,7 @@ async function downloadCsv() {
       ...activities.map((item) => !choices.has(item.id) ? "未回覆" : choices.get(item.id) ? "參加" : "不參加"),
       hosting ? Hosting.statusLabels[hosting.status] : "未回覆",
       hosting?.guest_type ? Hosting.guestLabels[hosting.guest_type] : "",
-      hosting?.guest_count ?? "",
+      hosting?.guest_count ?? "", hosting?.pickup_count ?? "",
     ]);
   }
   const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;

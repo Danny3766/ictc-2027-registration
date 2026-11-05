@@ -148,7 +148,7 @@ export async function handler(request) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }
     let query = database.from("registrations")
-      .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),registration_hosting(status,guest_type,guest_count)",
+      .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),registration_hosting(status,guest_type,guest_count,pickup_count)",
         beforeSerial === null ? { count: "exact" } : undefined)
       .order("serial_no", { ascending: false });
     query = beforeSerial === null ? query.range(page * 100, page * 100 + 99)
