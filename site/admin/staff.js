@@ -119,7 +119,7 @@ function clearSession() {
   }
   document.querySelector("#stats-rows").replaceChildren();
   document.querySelector("#district-stats-rows").replaceChildren();
-  document.querySelector("#district-activity-stats-rows").replaceChildren();
+  document.querySelector("#district-activity-cards").replaceChildren();
   document.querySelector("#hosting-status-stats-rows").replaceChildren();
   document.querySelector("#hosting-capacity-stats-rows").replaceChildren();
   document.querySelector("#stats-summary").textContent = "";
@@ -457,24 +457,52 @@ async function showStatistics() {
   ].join("");
   const districtRows = document.querySelector("#district-stats-rows");
   districtRows.replaceChildren();
+  const districtTotal = { people: 0, fee: 0 };
+  // One card per district; the card has no 合計 row, since adding activities would count a person twice.
+  const districtCards = [];
   for (const district of reference.districts) {
     const people = registrations.filter((item) => item.district_id === district.id);
     const fee = people.reduce((sum, person) => sum + mealFee(person, activities), 0);
+    districtTotal.people += people.length;
+    districtTotal.fee += fee;
     const row = document.createElement("tr");
     for (const value of [district.name, people.length, `NT$${fee}`]) cell(row, value);
     districtRows.append(row);
+    districtCards.push(districtActivityCard(district, people, activities));
   }
-  const districtActivityRows = document.querySelector("#district-activity-stats-rows");
-  districtActivityRows.replaceChildren();
-  for (const district of reference.districts) {
-    const people = registrations.filter((item) => item.district_id === district.id);
-    for (const activity of currentActivities()) {
-      const row = document.createElement("tr");
-      for (const value of [district.name, activity.title, ...countAnswers(people, activity)]) cell(row, value);
-      districtActivityRows.append(row);
-    }
-  }
+  totalRow(districtRows, [districtTotal.people, `NT$${districtTotal.fee}`]);
+  document.querySelector("#district-activity-cards").replaceChildren(...districtCards);
   showHostingStatistics(registrations);
+}
+
+function totalRow(rows, values) {
+  const row = document.createElement("tr");
+  row.className = "total";
+  for (const value of ["合計", ...values]) cell(row, value);
+  rows.append(row);
+}
+
+function districtActivityCard(district, people, activities) {
+  const card = document.createElement("section");
+  card.className = "mini-card";
+  const title = document.createElement("h3");
+  const count = document.createElement("small");
+  count.className = "field-hint";
+  count.textContent = `有效登記 ${people.length} 人`;
+  title.append(district.name, " ", count);
+  const table = document.createElement("table");
+  table.className = "numeric";
+  table.innerHTML = "<thead><tr><th>活動</th><th>參加</th><th>不參加</th><th>未回覆</th></tr></thead><tbody></tbody>";
+  for (const activity of activities) {
+    const row = document.createElement("tr");
+    for (const value of [activity.title, ...countAnswers(people, activity)]) cell(row, value);
+    table.tBodies[0].append(row);
+  }
+  const scroll = document.createElement("div");
+  scroll.className = "table-scroll";
+  scroll.append(table);
+  card.append(title, scroll);
+  return card;
 }
 
 function showHostingStatistics(registrations) {
@@ -500,15 +528,15 @@ function showHostingStatistics(registrations) {
     for (const value of [Hosting.statusLabels[status] ?? "未回覆", total]) cell(row, value);
     statusRows.append(row);
   }
+  totalRow(statusRows, [registrations.length]);
   const capacityRows = document.querySelector("#hosting-capacity-stats-rows");
   capacityRows.replaceChildren();
-  const people = Object.values(capacity).reduce((sum, item) => sum + item.people, 0);
-  const totalRows = Object.entries(capacity).map(([type, total]) => [Hosting.guestLabels[type], total]);
-  for (const [name, total] of [...totalRows, ["合計", { registrations: answers.hosting, people }]]) {
+  for (const [type, total] of Object.entries(capacity)) {
     const row = document.createElement("tr");
-    for (const value of [name, total.registrations, total.people]) cell(row, value);
+    for (const value of [Hosting.guestLabels[type], total.registrations, total.people]) cell(row, value);
     capacityRows.append(row);
   }
+  totalRow(capacityRows, [answers.hosting, Object.values(capacity).reduce((sum, item) => sum + item.people, 0)]);
   const pickupRow = document.createElement("tr");
   for (const value of ["可配搭接機", pickup.registrations, pickup.people]) cell(pickupRow, value);
   document.querySelector("#hosting-pickup-stats-rows").replaceChildren(pickupRow);
