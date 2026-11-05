@@ -33,6 +33,19 @@ async function query(page, name = "測試登記", district = "1") {
   await page.getByRole("button", { name: "查詢" }).click();
 }
 
+test("an activity's map link opens in a new tab, and only http(s) links are shown", async ({ page }) => {
+  await page.route("**/functions/v1/registration", (route) => route.fulfill({ json: { ...openPage(), activities: [
+    { id: 1, title: "有地圖", map_url: "https://share.google/abc123" },
+    { id: 2, title: "壞連結", map_url: "javascript:alert(1)" },
+  ] } }));
+  await page.goto("/");
+  const links = page.locator("#activities a");
+  await expect(links).toHaveCount(1);
+  await expect(links).toHaveText("查看地圖");
+  await expect(links).toHaveAttribute("href", "https://share.google/abc123");
+  await expect(links).toHaveAttribute("target", "_blank");
+});
+
 test("closed registration remains queryable by name and district and disables edits", async ({ page }) => {
   const bodies = [];
   await page.route("**/functions/v1/registration", async (route) => {

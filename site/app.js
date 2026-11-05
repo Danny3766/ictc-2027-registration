@@ -109,12 +109,22 @@ async function api(body) {
   return result;
 }
 
+// Only http(s) links open; anything else (javascript:, typos) is left out rather than shown broken.
+function mapLink(value) {
+  let url;
+  try { url = new URL(value); } catch { return ""; }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+  const href = escapeHtml(url.href).replaceAll('"', "&quot;");
+  return `<p class="hint"><a href="${href}" target="_blank" rel="noopener noreferrer">查看地圖</a></p>`;
+}
+
 function activityDetails(activity) {
     const time = activityTime(activity);
     return `<strong>${escapeHtml(activity.title)}</strong>
       ${time ? `<p class="hint">時間：${escapeHtml(time)}</p>` : ""}
       ${activity.venue ? `<p class="hint">地點：${escapeHtml(activity.venue)}</p>` : ""}
       ${activity.address ? `<p class="hint">地址：${escapeHtml(activity.address)}</p>` : ""}
+      ${activity.map_url ? mapLink(activity.map_url) : ""}
       ${activity.fee_amount != null ? `<p class="hint">規劃費用：NT$${escapeHtml(activity.fee_amount)}／人</p>` : ""}
       ${activity.description ? `<p class="hint">${escapeHtml(activity.description)}</p>` : ""}`;
 }
