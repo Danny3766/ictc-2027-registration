@@ -369,6 +369,10 @@ test("while hosting is open, a new registration must answer it and the success p
   const section = page.locator("#hosting-section");
   await expect(section).toContainText("接待期間 2/19（五）～2/22（一）");
   await expect(section).toContainText("同一家只需一人登記開家接待");
+  // On both forms the hosting section comes before the activity choices.
+  expect(await page.evaluate(() => [["#hosting-section", "#activities"], ["#edit-hosting-section", "#edit-activities"]]
+    .every(([hosting, activities]) => document.querySelector(hosting)
+      .compareDocumentPosition(document.querySelector(activities)) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   await page.locator('#registration-form input[name="full_name"]').fill("接待測試");
   await page.locator('#registration-form select[name="district_id"]').selectOption("1");
   await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
@@ -689,10 +693,10 @@ test("hosting options stay readable when there is no description", async ({ page
     }
     return route.fulfill({ json: { ...queried(true), hosting: brothers } });
   });
-  // Each choice sits on one line under the legend, starting at the section's left edge.
+  // Each choice sits on one line under the legend, starting at the legend's left edge.
   const readable = async (section) => {
     const labels = section.locator(".hosting-options label");
-    const [box, first, longest] = await Promise.all([section.boundingBox(), labels.first().boundingBox(), labels.last().boundingBox()]);
+    const [box, first, longest] = await Promise.all([section.locator("legend").boundingBox(), labels.first().boundingBox(), labels.last().boundingBox()]);
     expect(first.x - box.x).toBeLessThan(8);
     // 家人已登記開家接待 stays on one line instead of wrapping character by character.
     expect(longest.height).toBeLessThan(40);

@@ -54,16 +54,16 @@
               </select></label
             >
           </div>
-          <fieldset>
-            <legend>活動選擇</legend>
-            <p class="hint">請為每項活動選擇參加或不參加，報名截止前都可以修改登記</p>
-            <div id="activities"></div>
-          </fieldset>
           <fieldset id="hosting-section" class="hosting-section" hidden>
             <legend>開家接待</legend>
             <p class="hint hosting-description" hidden></p>
             <p class="hint">同一家只需一人登記開家接待，其他家人請選「家人已登記開家接待」。</p>
             <div id="hosting-fields"></div>
+          </fieldset>
+          <fieldset>
+            <legend>活動選擇</legend>
+            <p class="hint">請為每項活動選擇參加或不參加，報名截止前都可以修改登記</p>
+            <div id="activities"></div>
           </fieldset>
           <label class="honeypot" aria-hidden="true"
             >網站<input name="website" tabindex="-1" autocomplete="off"
@@ -86,14 +86,14 @@
           <p id="edit-identity" class="notice"></p>
           <p class="hint">姓名或區需要更正時，請聯絡服事者。</p>
           <p id="edit-mode-hint" class="hint" hidden>正在修改登記內容。</p>
-          <fieldset>
-            <legend>活動選擇</legend>
-            <div id="edit-activities"></div>
-          </fieldset>
           <fieldset id="edit-hosting-section" class="hosting-section" hidden>
             <legend>開家接待</legend>
             <p class="hint hosting-description" hidden></p>
             <div id="edit-hosting"></div>
+          </fieldset>
+          <fieldset>
+            <legend>活動選擇</legend>
+            <div id="edit-activities"></div>
           </fieldset>
           <div class="actions">
             <button id="start-edit" type="button">修改登記內容</button>

@@ -45,7 +45,9 @@ fieldset { padding: 0; border: 0; }
 .activity-options input { width: auto; min-height: auto; margin: 0; }
 .activity-status { display: inline-block; margin: .4rem 0; padding: .35rem .6rem; border-radius: .4rem; color: #33443d; background: #eef3f0; font-weight: 700; }
 #save-edit:disabled { cursor: not-allowed; }
-.hosting-section { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5ebe8; }
+.hosting-section { margin: 1.5rem 0; padding: 1rem; border-radius: .75rem; background: #f1f7f4; }
+/* The status pill's own tint nearly matches the section, so it goes white here. */
+.hosting-section .activity-status { background: #fff; }
 .hosting-section > legend { float: left; width: 100%; padding: 0; font-weight: 700; }
 /* Every block after the floated legend clears it; the first one may be a hidden description. */
 .hosting-section > legend ~ * { clear: left; }
