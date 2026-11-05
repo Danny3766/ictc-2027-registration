@@ -538,6 +538,14 @@ cancelEditButton.addEventListener("click", () => {
   showMessage("以下為目前登記內容。");
 });
 
+// A page brought back whole from the back/forward cache keeps typed text, which autocomplete="off"
+// does not cover; only the names are cleared, since other fields drive what the form shows.
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  registrationForm.elements.full_name.value = "";
+  queryForm.elements.full_name.value = "";
+});
+
 window.addEventListener("beforeunload", (event) => {
   if (!hasUnsavedChanges()) return;
   event.preventDefault();
