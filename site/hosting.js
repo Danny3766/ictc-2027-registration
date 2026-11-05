@@ -54,12 +54,13 @@ const Hosting = (() => {
     const hosting = status === "hosting";
     details.hidden = !hosting;
     details.querySelectorAll("select").forEach((select) => { select.disabled = !hosting; });
-    // Pickup is stored with an answer, so it waits for one: read() returns null without a status,
-    // which would silently drop a count chosen where the answer may stay 未回覆 (back office).
-    container.querySelector('[name="pickup_count"]').disabled = !status;
+    // Pickup is saved only with an answer: free from the start where one is required, otherwise it waits.
+    const answerRequired = container.querySelector('[name="hosting_status"]').required;
+    container.querySelector('[name="pickup_count"]').disabled = !status && !answerRequired;
   }
 
-  // required: a new answer must be given; an existing unanswered registration in the back office may stay 未回覆.
+  // required: a new answer must be given (pickup is then selectable before it); an existing unanswered
+  // registration in the back office may stay 未回覆, and pickup waits for an answer.
   function render(container, value = null, required = true) {
     container.innerHTML = markup(container.id);
     container.dataset.hosting = "";
