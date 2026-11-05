@@ -426,12 +426,12 @@ async function showStatistics() {
 
 function showHostingStatistics(registrations) {
   const answers = { hosting: 0, not_hosting: 0, family_registered: 0, unanswered: 0 };
-  const capacity = { brother: { groups: 0, people: 0 }, sister: { groups: 0, people: 0 }, family: { groups: 0, people: 0 } };
+  const capacity = Object.fromEntries(Object.keys(Hosting.guestLabels).map((type) => [type, { registrations: 0, people: 0 }]));
   for (const registration of registrations) {
     const answer = hostingOf(registration);
     answers[answer?.status ?? "unanswered"] += 1;
     if (answer?.status !== "hosting") continue;
-    capacity[answer.guest_type].groups += answer.family_count ?? 0;
+    capacity[answer.guest_type].registrations += 1;
     capacity[answer.guest_type].people += answer.guest_count;
   }
   const statusRows = document.querySelector("#hosting-status-stats-rows");
@@ -443,9 +443,11 @@ function showHostingStatistics(registrations) {
   }
   const capacityRows = document.querySelector("#hosting-capacity-stats-rows");
   capacityRows.replaceChildren();
-  for (const [type, total] of Object.entries(capacity)) {
+  const people = Object.values(capacity).reduce((sum, item) => sum + item.people, 0);
+  const totalRows = Object.entries(capacity).map(([type, total]) => [Hosting.guestLabels[type], total]);
+  for (const [name, total] of [...totalRows, ["合計", { registrations: answers.hosting, people }]]) {
     const row = document.createElement("tr");
-    for (const value of [Hosting.guestLabels[type], type === "family" ? total.groups : "—", total.people]) cell(row, value);
+    for (const value of [name, total.registrations, total.people]) cell(row, value);
     capacityRows.append(row);
   }
 }
@@ -460,7 +462,7 @@ async function downloadCsv() {
   const activities = currentActivities();
   const districts = new Map(reference.districts.map((item) => [item.id, item.name]));
   const rows = [["流水號", "姓名", "區", "匯入狀態", ...activities.map((item) => item.title),
-    "接待狀態", "接待對象", "接待人數", "家庭數", "接待備註"]];
+    "開家接待", "接待對象", "可接待人數"]];
   for (const registration of activeRegistrations(await allRegistrations())) {
     const choices = new Map(registration.registration_choices.map((item) => [item.activity_id, item.attending]));
     const hosting = hostingOf(registration);
@@ -470,7 +472,7 @@ async function downloadCsv() {
       ...activities.map((item) => !choices.has(item.id) ? "未回覆" : choices.get(item.id) ? "參加" : "不參加"),
       hosting ? Hosting.statusLabels[hosting.status] : "未回覆",
       hosting?.guest_type ? Hosting.guestLabels[hosting.guest_type] : "",
-      hosting?.guest_count ?? "", hosting?.family_count ?? "", hosting?.note ?? "",
+      hosting?.guest_count ?? "",
     ]);
   }
   const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
@@ -557,7 +559,8 @@ function openRegistration(registration) {
   const hosting = hostingOf(registration);
   const hostingFields = document.querySelector("#detail-hosting");
   Hosting.render(hostingFields, hosting, hosting !== null);
-  if (!isActive) hostingFields.querySelectorAll("input, textarea").forEach((control) => control.disabled = true);
+  // The fieldset disables every hosting control, whatever its tag; sync() cannot re-enable them.
+  hostingFields.closest("fieldset").disabled = !isActive;
   const voidForm = document.querySelector("#void-form");
   voidForm.reset();
   voidForm.querySelectorAll("input, button").forEach((control) => control.disabled = registration.record_status === "void");

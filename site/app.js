@@ -227,10 +227,6 @@ function updateSaveState() {
   saveEditButton.disabled = !editForm.checkValidity() || !hasUnsavedChanges();
 }
 
-function hostingLine(answer) {
-  return answer?.note ? `${Hosting.summary(answer)}；備註：${answer.note}` : Hosting.summary(answer);
-}
-
 // The hosting description: on the registration form while hosting is open, and in the lookup only
 // while editing, since the confirmation and read-only views cannot answer it.
 function showHostingDescriptions() {
@@ -294,7 +290,6 @@ function showHostingSummary() {
   editHostingSection.hidden = !hostingOpen() && !answer;
   delete editHosting.dataset.hosting;
   editHosting.innerHTML = `<p class="activity-status">登記狀態：${escapeHtml(Hosting.summary(answer))}</p>
-    ${answer?.note ? `<p class="hosting-note">備註：${escapeHtml(answer.note)}</p>` : ""}
     ${hostingOpen() ? "" : `<p class="hint">${hostingClosedMessage}</p>`}`;
 }
 
@@ -332,11 +327,29 @@ function setBusy(form, busy) {
   form.querySelectorAll("button").forEach((button) => button.disabled = busy);
 }
 
+// Built from text nodes so the admin's note can never become markup; only https:// links are clickable.
+// A link is ASCII URL characters only, so Chinese text written right after it stays text, and a
+// trailing . , ; : ! ? ends the sentence, not the link.
+function showEventNote(text) {
+  const note = document.querySelector("#event-note");
+  note.replaceChildren(...String(text ?? "").split(/(https:\/\/[\w\-.~:/?#[\]@!$&*+,;=%]*[\w\-~/#[\]@$&*+=%])/).map((part, index) => {
+    if (index % 2 === 0) return document.createTextNode(part);
+    const link = document.createElement("a");
+    link.href = part;
+    link.textContent = part;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    return link;
+  }));
+  note.hidden = !text;
+}
+
 async function loadPage() {
   try {
     pageData = await api();
     document.querySelector("#event-name").textContent = pageData.settings.event_name;
     document.querySelector("#event-meta").textContent = [pageData.settings.venue, pageData.settings.address].filter(Boolean).join("｜");
+    showEventNote(pageData.settings.event_note);
     showProgram(pageData.program);
     registrationForm.elements.district_id.innerHTML = districtOptions(pageData.districts);
     queryForm.elements.district_id.innerHTML = districtOptions(pageData.districts);
@@ -379,7 +392,7 @@ registrationForm.addEventListener("submit", async (event) => {
         title: pageData.activities.find((activity) => activity.id === choice.activity_id)?.title ?? "",
         attending: choice.attending,
       })),
-      hosting: hosting ? hostingLine(hosting) : null,
+      hosting: hosting ? `開家接待：${Hosting.summary(hosting)}` : null,
     }));
     location.assign("./success.html");
   } catch (error) {

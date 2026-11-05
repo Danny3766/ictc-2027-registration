@@ -599,13 +599,13 @@ const hostedRegistrations = {
   list_registrations: () => ({ json: { count: 4, registrations: [
     { id: "223e4567-e89b-42d3-a456-426614174001", serial_no: 4, full_name: "接待弟兄", district_id: 1, record_status: "active", import_status: "imported",
       registration_choices: [{ activity_id: 1, attending: true }], updated_at: "2026-11-05T00:00:00Z",
-      registration_hosting: { status: "hosting", guest_type: "brother", guest_count: 2, family_count: null, note: "=沒有電梯" } },
-    { id: "223e4567-e89b-42d3-a456-426614174002", serial_no: 3, full_name: "接待家庭", district_id: 1, record_status: "active", import_status: "pending",
+      registration_hosting: { status: "hosting", guest_type: "brother", guest_count: 2 } },
+    { id: "223e4567-e89b-42d3-a456-426614174002", serial_no: 3, full_name: "接待夫婦", district_id: 1, record_status: "active", import_status: "pending",
       registration_choices: [{ activity_id: 1, attending: true }], updated_at: "2026-11-05T00:00:00Z",
-      registration_hosting: { status: "hosting", guest_type: "family", guest_count: 8, family_count: 2, note: null } },
+      registration_hosting: { status: "hosting", guest_type: "couple", guest_count: 4 } },
     { id: "223e4567-e89b-42d3-a456-426614174003", serial_no: 2, full_name: "家人已登記", district_id: 1, record_status: "active", import_status: "pending",
       registration_choices: [{ activity_id: 1, attending: false }], updated_at: "2026-11-05T00:00:00Z",
-      registration_hosting: { status: "family_registered", guest_type: null, guest_count: null, family_count: null, note: null } },
+      registration_hosting: { status: "family_registered", guest_type: null, guest_count: null } },
     { id: "223e4567-e89b-42d3-a456-426614174004", serial_no: 1, full_name: "未回覆接待", district_id: 1, record_status: "active", import_status: "pending",
       registration_choices: [{ activity_id: 1, attending: false }], updated_at: "2026-11-05T00:00:00Z", registration_hosting: null },
   ] } }),
@@ -617,15 +617,14 @@ test("staff edit a hosting answer, and an existing answer cannot be cleared", as
   await login(page);
   await page.getByRole("row", { name: /接待弟兄/ }).getByRole("button", { name: "查看／處理" }).click();
   const hosting = page.locator("#detail-hosting");
-  await expect(hosting.getByLabel("開家接待", { exact: true })).toBeChecked();
-  await expect(hosting.getByLabel("人數")).toHaveValue("2");
-  await expect(hosting.getByLabel("備註（選填，200 字內）")).toHaveValue("=沒有電梯");
-  await hosting.getByLabel("家庭", { exact: true }).check();
-  await hosting.getByLabel("家庭數").fill("2");
-  await hosting.getByLabel("總人數（所有家庭合計）").fill("8");
+  await expect(hosting.getByLabel("是", { exact: true })).toBeChecked();
+  await expect(hosting.getByLabel("可以接待幾位？")).toHaveValue("2");
+  await expect(hosting.getByLabel("接待對象")).toHaveValue("brother");
+  await hosting.getByLabel("可以接待幾位？").selectOption("4");
+  await hosting.getByLabel("接待對象").selectOption({ label: "夫婦" });
   await page.getByRole("button", { name: "儲存登記" }).click();
   await expect(page.locator("#message")).toHaveText("登記資料已儲存。");
-  expect(saved.hosting).toEqual({ status: "hosting", guest_type: "family", guest_count: 8, family_count: 2, note: "=沒有電梯" });
+  expect(saved.hosting).toEqual({ status: "hosting", guest_type: "couple", guest_count: 4 });
   await expect(hosting.locator('input[name="hosting_status"]').first()).toHaveAttribute("required", "");
 
   // An unanswered registration may stay unanswered.
@@ -634,6 +633,24 @@ test("staff edit a hosting answer, and an existing answer cannot be cleared", as
   await page.getByRole("button", { name: "儲存登記" }).click();
   await expect.poll(() => saved.registration_id).toBe("223e4567-e89b-42d3-a456-426614174004");
   expect(saved.hosting).toBeNull();
+});
+
+test("a void registration shows its hosting answer with every control disabled", async ({ page }) => {
+  const voided = { list_registrations: () => {
+    const result = hostedRegistrations.list_registrations();
+    result.json.registrations[0] = { ...result.json.registrations[0], record_status: "void" };
+    return result;
+  } };
+  await mockStaff(page, "staff", () => {}, "測試登記", voided);
+  await login(page);
+  await page.getByRole("row", { name: /接待弟兄/ }).getByRole("button", { name: "查看／處理" }).click();
+  const hosting = page.locator("#detail-hosting");
+  await expect(hosting.getByLabel("可以接待幾位？")).toHaveValue("2");
+  await expect(hosting.getByLabel("可以接待幾位？")).toBeDisabled();
+  await expect(hosting.getByLabel("接待對象")).toBeDisabled();
+  // An active registration opened next is editable again.
+  await page.getByRole("row", { name: /接待夫婦/ }).getByRole("button", { name: "查看／處理" }).click();
+  await expect(hosting.getByLabel("接待對象")).toBeEnabled();
 });
 
 test("補登 must answer hosting while the public survey is open", async ({ page }) => {
@@ -654,12 +671,12 @@ test("補登 must answer hosting while the public survey is open", async ({ page
   await form.getByRole("button", { name: "建立補登" }).click();
   expect(created).toBeUndefined();
   const hosting = page.locator("#new-registration-hosting");
-  await hosting.getByLabel("開家接待", { exact: true }).check();
-  await hosting.getByLabel("姊妹", { exact: true }).check();
-  await hosting.getByLabel("人數").fill("2");
+  await hosting.getByLabel("是", { exact: true }).check();
+  await hosting.getByLabel("接待對象").selectOption({ label: "姊妹" });
+  await hosting.getByLabel("可以接待幾位？").selectOption("2");
   await form.getByRole("button", { name: "建立補登" }).click();
   await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
-  expect(created.hosting).toEqual({ status: "hosting", guest_type: "sister", guest_count: 2, family_count: null, note: null });
+  expect(created.hosting).toEqual({ status: "hosting", guest_type: "sister", guest_count: 2 });
   await expect(hosting.locator('input[name="hosting_status"]:checked')).toHaveCount(0);
 });
 
@@ -669,14 +686,17 @@ test("statistics count hosting answers and capacity", async ({ page }) => {
   await page.getByRole("button", { name: "更新統計" }).click();
   const answers = page.locator("#hosting-status-stats-rows tr");
   await expect(answers).toHaveCount(4);
-  await expect(answers.nth(0).locator("td")).toHaveText(["開家接待", "2"]);
-  await expect(answers.nth(1).locator("td")).toHaveText(["這次不參加開家接待", "0"]);
-  await expect(answers.nth(2).locator("td")).toHaveText(["家人已登記接待", "1"]);
+  await expect(answers.nth(0).locator("td")).toHaveText(["是", "2"]);
+  await expect(answers.nth(1).locator("td")).toHaveText(["否", "0"]);
+  await expect(answers.nth(2).locator("td")).toHaveText(["家人已登記開家接待", "1"]);
   await expect(answers.nth(3).locator("td")).toHaveText(["未回覆", "1"]);
   const capacity = page.locator("#hosting-capacity-stats-rows tr");
-  await expect(capacity.nth(0).locator("td")).toHaveText(["弟兄", "—", "2"]);
-  await expect(capacity.nth(1).locator("td")).toHaveText(["姊妹", "—", "0"]);
-  await expect(capacity.nth(2).locator("td")).toHaveText(["家庭", "2", "8"]);
+  await expect(capacity).toHaveCount(5);
+  await expect(capacity.nth(0).locator("td")).toHaveText(["夫婦", "1", "4"]);
+  await expect(capacity.nth(1).locator("td")).toHaveText(["弟兄", "1", "2"]);
+  await expect(capacity.nth(2).locator("td")).toHaveText(["姊妹", "0", "0"]);
+  await expect(capacity.nth(3).locator("td")).toHaveText(["不拘", "0", "0"]);
+  await expect(capacity.nth(4).locator("td")).toHaveText(["合計", "2", "6"]);
 });
 
 test("CSV adds the hosting columns", async ({ page }, testInfo) => {
@@ -686,11 +706,11 @@ test("CSV adds the hosting columns", async ({ page }, testInfo) => {
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "下載 CSV" }).click();
   const lines = (await readFile(await (await download).path(), "utf8")).split("\r\n");
-  expect(lines[0]).toContain('"接待狀態","接待對象","接待人數","家庭數","接待備註"');
-  expect(lines[1]).toContain('"開家接待","弟兄","2","","\'=沒有電梯"');
-  expect(lines[2]).toContain('"開家接待","家庭","8","2",""');
-  expect(lines[3]).toContain('"家人已登記接待","","","",""');
-  expect(lines[4]).toContain('"未回覆","","","",""');
+  expect(lines[0]).toMatch(/"開家接待","接待對象","可接待人數"$/);
+  expect(lines[1]).toMatch(/"是","弟兄","2"$/);
+  expect(lines[2]).toMatch(/"是","夫婦","4"$/);
+  expect(lines[3]).toMatch(/"家人已登記開家接待","",""$/);
+  expect(lines[4]).toMatch(/"未回覆","",""$/);
 });
 
 test("admins save the hosting switch and description from their own card", async ({ page }) => {
@@ -704,6 +724,33 @@ test("admins save the hosting switch and description from their own card", async
   await form.getByRole("button", { name: "儲存開家接待設定" }).click();
   await expect(page.locator("#message")).toHaveText("設定已儲存。");
   expect(saved).toEqual({ action: "save_reference", kind: "hosting", data: { is_hosting_open: true, hosting_description: "接待期間 2/19～2/22" } });
+});
+
+test("admins save the site note from the right side of the settings card", async ({ page }) => {
+  let saved;
+  await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved = payload; });
+  await login(page);
+  const form = page.locator("#settings-form");
+  const note = form.locator('textarea[name="event_note"]');
+  await expect(note).toHaveAttribute("maxlength", "500");
+  await note.fill("捷運國父紀念館站 5 號出口 https://maps.app.goo.gl/abc123");
+  await form.getByRole("button", { name: "儲存網站設定" }).click();
+  await expect(page.locator("#message")).toHaveText("設定已儲存。");
+  expect(saved.data.event_note).toBe("捷運國父紀念館站 5 號出口 https://maps.app.goo.gl/abc123");
+
+  const { width } = page.viewportSize();
+  const [left, right] = await form.evaluate((element) =>
+    [".registration-main", ".registration-columns > label"].map((selector) => {
+      const { x, y, width: w, height } = element.querySelector(selector).getBoundingClientRect();
+      return { x, y, width: w, height };
+    }));
+  if (width >= 896) {
+    expect(right.x).toBeGreaterThan(left.x + left.width - 1);
+    expect(Math.abs(right.y - left.y)).toBeLessThan(2);
+  } else {
+    expect(right.y).toBeGreaterThan(left.y + left.height - 1);
+  }
+  expect(right.x + right.width).toBeLessThanOrEqual(width);
 });
 
 test("staff do not see the hosting settings card", async ({ page }) => {
@@ -754,10 +801,10 @@ test("補登 may leave hosting unanswered while the survey is closed, until the 
   const hosting = page.locator("#new-registration-hosting");
   await expect(hosting.locator('input[name="hosting_status"]').first()).toHaveAttribute("required", "");
   await expect(form.locator('input[name="full_name"]')).toHaveValue("補登未答");
-  await hosting.getByLabel("這次不參加開家接待").check();
+  await hosting.getByLabel("否", { exact: true }).check();
   await form.getByRole("button", { name: "建立補登" }).click();
   await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
-  expect(created[1].hosting).toEqual({ status: "not_hosting", guest_type: null, guest_count: null, family_count: null, note: null });
+  expect(created[1].hosting).toEqual({ status: "not_hosting", guest_type: null, guest_count: null });
 });
 
 test("a password set for another admin must be changed at their next login", async ({ page }) => {

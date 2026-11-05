@@ -48,15 +48,14 @@ fieldset { padding: 0; border: 0; }
 /* Every block after the floated legend clears it; the first one may be a hidden description. */
 .hosting-section > legend ~ * { clear: left; }
 .hosting-description { white-space: pre-line; }
-.hosting-options, .hosting-guest { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; }
-.hosting-options label, .hosting-guest label { display: flex; align-items: center; gap: .35rem; margin: .4rem 0; }
-.hosting-options input, .hosting-guest input { width: auto; min-height: auto; margin: 0; }
-.hosting-guest { margin: .5rem 0; }
-.hosting-guest legend { width: 100%; margin-bottom: .1rem; }
+.hosting-question { margin: .5rem 0 0; }
+.hosting-options { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; }
+.hosting-options label { display: flex; align-items: center; gap: .35rem; margin: .4rem 0; }
+.hosting-options input { width: auto; min-height: auto; margin: 0; }
 .hosting-details { margin: .5rem 0 0; padding: .25rem 0 .25rem 1rem; border-left: 3px solid #cfe0d7; }
 .hosting-details > label { margin: .75rem 0; }
-.hosting-details input[type="number"] { max-width: 10rem; display: block; }
-.hosting-note { margin: .25rem 0 0; color: #33443d; white-space: pre-line; overflow-wrap: anywhere; }
+.hosting-details select { max-width: 12rem; display: block; }
+.event-note { white-space: pre-line; overflow-wrap: anywhere; }
 .hint { color: #59655f; font-size: .95rem; }
 .actions { display: grid; gap: .75rem; }
 .honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
