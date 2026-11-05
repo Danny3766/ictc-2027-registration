@@ -8,6 +8,24 @@ const corsHeaders = {
 const encoder = new TextEncoder();
 const notFoundMessage = "查無登記資料，請確認姓名寫法與區和登記時相同";
 const lookupClosedMessage = "查詢功能暫停中，請稍後再試";
+const invalidHostingMessage = "請檢查開家接待內容";
+// The page branches on `code`, never on the message text, so the wording can change freely.
+const hostingClosed = { error: "開家接待調查已關閉", code: "HOSTING_CLOSED" };
+// A page loaded before this release has no hosting fields; its users can only act on "reload".
+const hostingRequired = { error: "開家接待調查已開放，請回答開家接待；看不到接待欄位時請重新整理頁面", code: "HOSTING_REQUIRED" };
+
+// The page shows the hosting fields when the switch opened after it loaded; the reply carries the
+// description too, which the admin may have written meanwhile. It is public text, like GET returns.
+async function hostingRequiredResponse(database) {
+  try {
+    const { data, error } = await database.from("site_settings").select("hosting_description").single();
+    // Without a successful read the field is left out, so the page keeps the description it has.
+    if (!error && data) return response({ ...hostingRequired, hosting_description: data.hosting_description }, 409);
+  } catch (error) {
+    console.error("Failed to read hosting description", error);
+  }
+  return response(hostingRequired, 409);
+}
 let createClient;
 
 export function isUuid(value) {
@@ -71,7 +89,7 @@ export async function handler(request) {
 
   if (request.method === "GET") {
     const [settings, districts, activities, program] = await Promise.all([
-      database.from("site_settings").select("event_name,venue,address,registration_deadline_at,is_registration_open").single(),
+      database.from("site_settings").select("event_name,venue,address,registration_deadline_at,is_registration_open,is_hosting_open,hosting_description").single(),
       database.from("districts").select("id,name").order("sort_order"),
       database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount").eq("is_published", true).order("sort_order"),
       database.from("program_items").select("event_date,start_time,end_time,title,note").eq("is_visible", true).order("sort_order"),
@@ -126,6 +144,7 @@ export async function handler(request) {
       p_full_name: body.full_name,
       p_district_id: body.district_id,
       p_choices: body.choices,
+      p_hosting: body.hosting ?? null,
     });
     if (!error) return response({ success: true }, 201);
     if (error.message.includes("NAME_TAKEN")) {
@@ -134,6 +153,9 @@ export async function handler(request) {
     if (error.message.includes("DUPLICATE_REQUEST")) return response({ error: "DUPLICATE_REQUEST" }, 409);
     if (error.message.includes("CREATE_RATE_LIMITED")) return response({ error: "登記暫時忙碌，請稍後再試" }, 429);
     if (error.message.includes("REGISTRATION_CLOSED")) return response({ error: "登記目前未開放" }, 409);
+    if (error.message.includes("HOSTING_CLOSED")) return response(hostingClosed, 409);
+    if (error.message.includes("HOSTING_REQUIRED")) return hostingRequiredResponse(database);
+    if (error.message.includes("INVALID_HOSTING")) return response({ error: invalidHostingMessage }, 400);
     if (isInputError(error)) return response({ error: "請檢查登記資料" }, 400);
     console.error(error.message);
     return response({ error: "登記失敗，請稍後再試" }, 500);
@@ -166,9 +188,13 @@ export async function handler(request) {
     p_full_name: body.full_name,
     p_district_id: districtId,
     p_choices: body.choices,
+    p_hosting: body.hosting ?? null,
   });
   if (error?.message.includes("REGISTRATION_CLOSED")) return response({ error: "登記已截止，資料只能查看" }, 409);
   if (error?.message.includes("LOOKUP_CLOSED")) return response({ error: lookupClosedMessage }, 503);
+  if (error?.message.includes("HOSTING_CLOSED")) return response(hostingClosed, 409);
+  if (error?.message.includes("HOSTING_REQUIRED")) return hostingRequiredResponse(database);
+  if (error?.message.includes("INVALID_HOSTING")) return response({ error: invalidHostingMessage }, 400);
   if (isInputError(error)) return response({ error: "請檢查登記資料" }, 400);
   if (error) {
     console.error("Failed to update registration", error);

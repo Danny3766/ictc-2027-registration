@@ -23,6 +23,9 @@ const queried = (canChange) => ({
   choices: [{ activity_id: 1, title: "測試活動", attending: true }],
 });
 
+// An invalid form is what keeps a submit from being sent, so check it rather than a request count alone.
+const registrationFormValid = (page) => page.locator("#registration-form").evaluate((form) => form.checkValidity());
+
 async function query(page, name = "測試登記", district = "1") {
   await page.getByRole("tab", { name: "查詢或修改登記" }).click();
   await page.locator('#query-form input[name="full_name"]').fill(name);
@@ -56,9 +59,9 @@ test("closed registration remains queryable by name and district and disables ed
   await expect(page.locator('#edit-form input[name="full_name"]')).toHaveCount(0);
   await expect(page.locator("#edit-form select")).toHaveCount(0);
   await expect(page.locator("#edit-form input")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "修改活動選擇" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "修改登記內容" })).toBeHidden();
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
-  await expect(page.locator("#page-message")).toHaveText("目前只能查看，無法修改活動選擇。");
+  await expect(page.locator("#page-message")).toHaveText("目前只能查看，無法修改登記內容。");
   expect(bodies).toEqual([{ action: "query", full_name: "測試登記", district_id: 1 }]);
   await expectEqualIdentityColumns(page.locator("#query-form .identity-fields"));
 
@@ -97,7 +100,7 @@ test("query is read-only until editing and returns to confirmation after saving"
   await expect(page.locator("#page-message")).toHaveText("以下為目前登記內容。");
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
   await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
-  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await page.getByRole("button", { name: "修改登記內容" }).click();
   const attending = page.locator('#edit-form input[name="activity_1"][value="true"]');
   const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
   const save = page.getByRole("button", { name: "儲存修改" });
@@ -116,7 +119,7 @@ test("query is read-only until editing and returns to confirmation after saving"
   });
   await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：不參加");
-  await expect(page.getByRole("button", { name: "修改活動選擇" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "修改登記內容" })).toBeVisible();
   expect(requests.map(({ action }) => action)).toEqual(["query", "update"]);
 });
 
@@ -131,7 +134,7 @@ test("cancel, tab changes, and another query protect unsaved edits", async ({ pa
 
   await page.goto("/");
   await query(page);
-  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await page.getByRole("button", { name: "修改登記內容" }).click();
   await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
 
   page.once("dialog", async (dialog) => dialog.dismiss());
@@ -154,7 +157,7 @@ test("cancel, tab changes, and another query protect unsaved edits", async ({ pa
   await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
 
-  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await page.getByRole("button", { name: "修改登記內容" }).click();
   await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
   page.once("dialog", async (dialog) => dialog.accept());
   await page.getByRole("tab", { name: "登記參加" }).click();
@@ -162,7 +165,7 @@ test("cancel, tab changes, and another query protect unsaved edits", async ({ pa
   await page.getByRole("tab", { name: "查詢或修改登記" }).click();
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
 
-  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await page.getByRole("button", { name: "修改登記內容" }).click();
   await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
   page.once("dialog", async (dialog) => dialog.accept());
   await page.getByRole("button", { name: "查詢" }).click();
@@ -181,7 +184,7 @@ test("an unanswered activity stays explicit until the registrant chooses", async
   await page.goto("/");
   await query(page);
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：未回覆");
-  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await page.getByRole("button", { name: "修改登記內容" }).click();
   await expect(page.getByRole("button", { name: "儲存修改" })).toBeDisabled();
   await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
   await expect(page.getByRole("button", { name: "儲存修改" })).toBeEnabled();
@@ -201,7 +204,7 @@ test("temporary save errors keep edits while a closed registration returns to co
 
   await page.goto("/");
   await query(page);
-  await page.getByRole("button", { name: "修改活動選擇" }).click();
+  await page.getByRole("button", { name: "修改登記內容" }).click();
   const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
   await notAttending.check();
   await page.getByRole("button", { name: "儲存修改" }).click();
@@ -213,7 +216,7 @@ test("temporary save errors keep edits while a closed registration returns to co
   await expect(page.locator("#page-message")).toHaveText("登記已截止，資料只能查看");
   await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
-  await expect(page.getByRole("button", { name: "修改活動選擇" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "修改登記內容" })).toBeHidden();
 });
 
 test("starting a new query prevents the previous form from being saved", async ({ page }) => {
@@ -287,6 +290,7 @@ test("registration tabs and success page show what was submitted", async ({ page
   await expect(page.locator("#query-form")).toBeVisible();
   await expect(page.locator('#query-form select[name="district_id"] option')).toHaveCount(3);
   await page.getByRole("tab", { name: "登記參加" }).click();
+  await expect(page.locator("#hosting-section")).toBeHidden();
   await expect(page.locator("#activities .activity").first()).toContainText("時間：2/21");
   await expect(page.locator("#activities .activity").first()).not.toContainText("00:00");
   await expect(page.locator("#activities .activity").nth(1)).toContainText("時間：2/20 12:30–14:00");
@@ -298,6 +302,7 @@ test("registration tabs and success page show what was submitted", async ({ page
   await page.getByRole("button", { name: "送出登記" }).click();
 
   await expect(page).toHaveURL(/success\.html$/);
+  expect(submitted.hosting).toBeUndefined();
   expect(submitted.choices).toEqual([
     { activity_id: 1, attending: true },
     { activity_id: 2, attending: false },
@@ -311,7 +316,333 @@ test("registration tabs and success page show what was submitted", async ({ page
   await expect(page.locator("#summary-identity")).toHaveText("David Wang｜第二區");
   // Going back to the form clears it, so the next person on a shared device cannot reopen it.
   await page.getByRole("link", { name: "回登記頁" }).click();
-  await expect(page.getByRole("button", { name: "送出登記" })).toBeVisible();
+  // The button is static HTML; the rendered activities show app.js has run and cleared the summary.
+  await expect(page.locator("#activities .activity")).toHaveCount(2);
   await page.goto("/success.html");
   await expect(page).not.toHaveURL(/success\.html$/);
+});
+
+const hostingPage = (open) => ({
+  ...openPage(),
+  settings: { ...openPage().settings, is_hosting_open: open, hosting_description: "接待期間 2/19（五）～2/22（一）" },
+});
+const brothers = { status: "hosting", guest_type: "brother", guest_count: 2, family_count: null, note: "沒有電梯" };
+
+test("while hosting is open, a new registration must answer it and the success page shows it", async ({ page }) => {
+  const submitted = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(true) });
+    submitted.push(route.request().postDataJSON());
+    return route.fulfill({ status: 201, json: { success: true } });
+  });
+  await page.goto("/");
+  const section = page.locator("#hosting-section");
+  await expect(section).toContainText("接待期間 2/19（五）～2/22（一）");
+  await expect(section).toContainText("同一家只需一人登記開家接待");
+  await page.locator('#registration-form input[name="full_name"]').fill("接待測試");
+  await page.locator('#registration-form select[name="district_id"]').selectOption("1");
+  await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  expect(await registrationFormValid(page)).toBe(false);
+  expect(submitted).toHaveLength(0);
+
+  await expect(section.locator(".hosting-details")).toBeHidden();
+  await section.getByLabel("開家接待", { exact: true }).check();
+  await expect(section.locator(".hosting-details")).toBeVisible();
+  await expect(section.locator('input[name="family_count"]')).toBeHidden();
+  await section.getByLabel("家庭", { exact: true }).check();
+  await expect(section.getByLabel("家庭數")).toBeVisible();
+  await expect(section.getByLabel("總人數（所有家庭合計）")).toBeVisible();
+  await section.getByLabel("家庭數").fill("3");
+  await section.getByLabel("總人數（所有家庭合計）").fill("2");
+  await page.getByRole("button", { name: "送出登記" }).click();
+  expect(await registrationFormValid(page)).toBe(false);
+  expect(submitted).toHaveLength(0);
+
+  await section.getByLabel("家庭數").fill("2");
+  await section.getByLabel("總人數（所有家庭合計）").fill("100");
+  await page.getByRole("button", { name: "送出登記" }).click();
+  expect(await registrationFormValid(page)).toBe(false);
+  expect(submitted).toHaveLength(0);
+
+  await section.getByLabel("總人數（所有家庭合計）").fill("8");
+  await section.getByLabel("備註（選填，200 字內）").fill(" 家中有養貓 ");
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page).toHaveURL(/success\.html$/);
+  expect(submitted[0].hosting).toEqual({ status: "hosting", guest_type: "family", guest_count: 8, family_count: 2, note: "家中有養貓" });
+  await expect(page.locator("#summary-choices li").last()).toHaveText("開家接待（家庭 2 組，共 8 人）；備註：家中有養貓");
+});
+
+test("an open hosting answer is confirmed first and saved with the registration", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(true) });
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.action === "query") return route.fulfill({ json: { ...queried(true), hosting: brothers } });
+    return route.fulfill({ json: { success: true } });
+  });
+  await page.goto("/");
+  await query(page);
+  const hosting = page.locator("#edit-hosting-section");
+  await expect(hosting).toContainText("登記狀態：開家接待（弟兄 2 人）");
+  await expect(hosting).toContainText("備註：沒有電梯");
+  await expect(hosting.locator("input")).toHaveCount(0);
+  // The description asks for an answer, so it appears only once the answer can be changed.
+  await expect(hosting.locator(".hosting-description")).toBeHidden();
+
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  const save = page.getByRole("button", { name: "儲存修改" });
+  await expect(hosting.locator(".hosting-description")).toHaveText("接待期間 2/19（五）～2/22（一）");
+  await expect(hosting.getByLabel("弟兄", { exact: true })).toBeChecked();
+  await expect(hosting.getByLabel("人數")).toHaveValue("2");
+  await hosting.getByLabel("人數").fill("3");
+  await expect(save).toBeEnabled();
+  await hosting.getByLabel("人數").fill("2");
+  await expect(save).toBeDisabled();
+  await hosting.getByLabel("這次不參加開家接待").check();
+  await expect(hosting.locator(".hosting-details")).toBeHidden();
+  await save.click();
+  await expect(page.locator("#page-message")).toHaveText("修改已儲存，以下為目前登記內容。");
+  expect(requests[1].hosting).toEqual({ status: "not_hosting", guest_type: null, guest_count: null, family_count: null, note: null });
+  await expect(hosting).toContainText("登記狀態：這次不參加開家接待");
+});
+
+test("while hosting is closed, the lookup shows the answer read-only and saves activities without it", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(false) });
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.action === "query") return route.fulfill({ json: { ...queried(true), hosting: brothers } });
+    return route.fulfill({ json: { success: true } });
+  });
+  await page.goto("/");
+  await expect(page.locator("#hosting-section")).toBeHidden();
+  await query(page);
+  const hosting = page.locator("#edit-hosting-section");
+  await expect(hosting).toContainText("登記狀態：開家接待（弟兄 2 人）");
+  await expect(hosting).toContainText("開家接待調查已關閉，如需調整請聯絡服事者");
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  await expect(hosting.locator("input")).toHaveCount(0);
+  await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("修改已儲存，以下為目前登記內容。");
+  expect(requests[1]).toEqual({ action: "update", full_name: "測試登記", district_id: 1, choices: [{ activity_id: 1, attending: false }] });
+});
+
+test("a lookup without a hosting answer hides the section while hosting is closed", async ({ page }) => {
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(false) });
+    return route.fulfill({ json: { ...queried(true), hosting: null } });
+  });
+  await page.goto("/");
+  await query(page);
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
+  await expect(page.locator("#edit-hosting-section")).toBeHidden();
+});
+
+const hostingRequired = { status: 409, json: { error: "開家接待調查已開放，請回答開家接待；看不到接待欄位時請重新整理頁面", code: "HOSTING_REQUIRED" } };
+const hostingClosed = { status: 409, json: { error: "開家接待調查已關閉", code: "HOSTING_CLOSED" } };
+const hostingRequiredWithDescription = { ...hostingRequired, json: { ...hostingRequired.json, hosting_description: "接待期間 2/19（五）～2/22（一）" } };
+const closedWithoutDescription = { ...openPage(), settings: { ...openPage().settings, is_hosting_open: false, hosting_description: null } };
+
+test("hosting opened after the page loaded shows its fields instead of failing every retry", async ({ page }) => {
+  const submitted = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    // The page loads before the admin writes the description and opens the switch.
+    if (route.request().method() === "GET") return route.fulfill({ json: closedWithoutDescription });
+    submitted.push(route.request().postDataJSON());
+    if (submitted.length > 1) return route.fulfill({ status: 201, json: { success: true } });
+    return route.fulfill(hostingRequiredWithDescription);
+  });
+  await page.goto("/");
+  const section = page.locator("#hosting-section");
+  await expect(section).toBeHidden();
+  await page.locator('#registration-form input[name="full_name"]').fill("接待測試");
+  await page.locator('#registration-form select[name="district_id"]').selectOption("1");
+  await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page.locator("#page-message")).toHaveText("開家接待調查已開放，請回答開家接待後再按「送出登記」。");
+  await expect(section).toBeVisible();
+  await expect(section).toContainText("接待期間 2/19（五）～2/22（一）");
+  await expect(page.locator('#registration-form input[name="full_name"]')).toHaveValue("接待測試");
+  await page.getByRole("button", { name: "送出登記" }).click();
+  expect(await registrationFormValid(page)).toBe(false);
+  expect(submitted).toHaveLength(1);
+  await section.getByLabel("這次不參加開家接待").check();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page).toHaveURL(/success\.html$/);
+  expect(submitted[1].hosting).toEqual({ status: "not_hosting", guest_type: null, guest_count: null, family_count: null, note: null });
+});
+
+test("hosting closed during an edit keeps the activity edits and drops only the hosting change", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(true) });
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.action === "query") return route.fulfill({ json: { ...queried(true), hosting: brothers } });
+    return route.fulfill(requests.length === 2 ? hostingClosed : { json: { success: true } });
+  });
+  await page.goto("/");
+  await query(page);
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
+  await notAttending.check();
+  const hosting = page.locator("#edit-hosting-section");
+  await hosting.getByLabel("人數").fill("3");
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("開家接待調查已關閉，接待內容維持原樣，請再按一次「儲存修改」。");
+  await expect(notAttending).toBeChecked();
+  await expect(hosting.locator("input")).toHaveCount(0);
+  await expect(hosting).toContainText("登記狀態：開家接待（弟兄 2 人）");
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("修改已儲存，以下為目前登記內容。");
+  expect(requests[2]).toEqual({ action: "update", full_name: "測試登記", district_id: 1, choices: [{ activity_id: 1, attending: false }] });
+  await page.getByRole("tab", { name: "登記參加" }).click();
+  await expect(page.locator("#hosting-section")).toBeHidden();
+  await expect(page.locator('#hosting-fields input')).toHaveCount(0);
+});
+
+test("hosting opened during an edit asks for the answer and keeps the activity edits", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(false) });
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.action === "query") return route.fulfill({ json: { ...queried(true), hosting: null } });
+    return route.fulfill(requests.length === 2 ? hostingRequired : { json: { success: true } });
+  });
+  await page.goto("/");
+  await query(page);
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
+  await notAttending.check();
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("開家接待調查已開放，請回答開家接待後再按「儲存修改」。");
+  await expect(notAttending).toBeChecked();
+  const hosting = page.locator("#edit-hosting-section");
+  await expect(hosting).toBeVisible();
+  await expect(page.getByRole("button", { name: "儲存修改" })).toBeDisabled();
+  await hosting.getByLabel("家人已登記接待").check();
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("修改已儲存，以下為目前登記內容。");
+  expect(requests[2].choices).toEqual([{ activity_id: 1, attending: false }]);
+  expect(requests[2].hosting).toEqual({ status: "family_registered", guest_type: null, guest_count: null, family_count: null, note: null });
+});
+
+test("hosting closed during an edit that changed only hosting returns to confirmation", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(true) });
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.action === "query") return route.fulfill({ json: { ...queried(true), hosting: brothers } });
+    return route.fulfill(hostingClosed);
+  });
+  await page.goto("/");
+  await query(page);
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  await page.locator("#edit-hosting-section").getByLabel("人數").fill("3");
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("開家接待調查已關閉，接待內容維持原樣。");
+  await expect(page.locator("#page-message")).not.toHaveClass(/error/);
+  await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
+  await expect(page.locator("#edit-hosting-section")).toContainText("登記狀態：開家接待（弟兄 2 人）");
+  await expect(page.getByRole("button", { name: "修改登記內容" })).toBeVisible();
+  expect(requests).toHaveLength(2);
+});
+
+test("a lookup in the other tab updates its hosting hint when the switch is found changed", async ({ page }) => {
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(false) });
+    const body = route.request().postDataJSON();
+    if (body.action === "query") return route.fulfill({ json: { ...queried(true), hosting: brothers } });
+    return route.fulfill(hostingRequired);
+  });
+  await page.goto("/");
+  await query(page);
+  const hosting = page.locator("#edit-hosting-section");
+  await expect(hosting).toContainText("開家接待調查已關閉，如需調整請聯絡服事者");
+  await page.getByRole("tab", { name: "登記參加" }).click();
+  await page.locator('#registration-form input[name="full_name"]').fill("家人登記");
+  await page.locator('#registration-form select[name="district_id"]').selectOption("1");
+  await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page.locator("#hosting-section")).toBeVisible();
+  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
+  await expect(hosting).toContainText("登記狀態：開家接待（弟兄 2 人）");
+  await expect(hosting).not.toContainText("開家接待調查已關閉");
+});
+
+test("hosting closed before a new registration is sent says the answer is dropped", async ({ page }) => {
+  const submitted = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(true) });
+    submitted.push(route.request().postDataJSON());
+    return route.fulfill(submitted.length === 1 ? hostingClosed : { status: 201, json: { success: true } });
+  });
+  await page.goto("/");
+  await page.locator('#registration-form input[name="full_name"]').fill("接待測試");
+  await page.locator('#registration-form select[name="district_id"]').selectOption("1");
+  await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
+  await page.locator("#hosting-section").getByLabel("這次不參加開家接待").check();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page.locator("#page-message")).toHaveText("開家接待調查已關閉，接待回答不會送出；請再按一次「送出登記」。");
+  await expect(page.locator("#hosting-section")).toBeHidden();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page).toHaveURL(/success\.html$/);
+  expect(submitted[1].hosting).toBeUndefined();
+});
+
+test("hosting closed while answering it for the first time keeps activity edits and leaves nothing required", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(true) });
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.action === "query") return route.fulfill({ json: { ...queried(true), hosting: null } });
+    return route.fulfill(requests.length === 2 ? hostingClosed : { json: { success: true } });
+  });
+  await page.goto("/");
+  await query(page);
+  await expect(page.locator("#edit-hosting-section")).toContainText("登記狀態：未回覆");
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
+  await notAttending.check();
+  await page.locator("#edit-hosting-section").getByLabel("家人已登記接待").check();
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("開家接待調查已關閉，接待內容維持原樣，請再按一次「儲存修改」。");
+  await expect(page.locator("#edit-hosting-section")).toBeHidden();
+  await expect(page.locator('#edit-form input[name="hosting_status"]')).toHaveCount(0);
+  await expect(notAttending).toBeChecked();
+  await expect(page.getByRole("button", { name: "儲存修改" })).toBeEnabled();
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator("#page-message")).toHaveText("修改已儲存，以下為目前登記內容。");
+  expect(requests[2]).toEqual({ action: "update", full_name: "測試登記", district_id: 1, choices: [{ activity_id: 1, attending: false }] });
+});
+
+test("a description sent while editing shows in the edit view and the registration tab", async ({ page }) => {
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: closedWithoutDescription });
+    const body = route.request().postDataJSON();
+    if (body.action === "query") return route.fulfill({ json: { ...queried(true), hosting: null } });
+    return route.fulfill(hostingRequiredWithDescription);
+  });
+  await page.goto("/");
+  await query(page);
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
+  await notAttending.check();
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page.locator('#edit-hosting-section input[name="hosting_status"]')).toHaveCount(3);
+  await expect(page.locator("#edit-hosting-section")).toContainText("接待期間 2/19（五）～2/22（一）");
+  await expect(notAttending).toBeChecked();
+  let asked = false;
+  page.once("dialog", (dialog) => { asked = true; return dialog.accept(); });
+  await page.getByRole("tab", { name: "登記參加" }).click();
+  // The kept activity edit is still unsaved, so leaving asks first.
+  expect(asked).toBe(true);
+  await expect(page.locator("#hosting-section")).toContainText("接待期間 2/19（五）～2/22（一）");
 });
