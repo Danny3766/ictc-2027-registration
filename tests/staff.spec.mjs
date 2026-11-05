@@ -312,14 +312,26 @@ test("editing an old registration leaves a newer activity unanswered", async ({ 
   expect(saved.choices).toEqual([{ activity_id: 1, attending: false }]);
 });
 
-test("statistics break down answers by district and activity", async ({ page }) => {
-  await mockStaff(page, "staff", () => {}, "測試登記", twoActivities);
+test("statistics show one card per district, with its activities and a district total", async ({ page }) => {
+  const reference = twoActivities.list_reference().json;
+  await mockStaff(page, "staff", () => {}, "測試登記", { list_reference: () => ({ json: {
+    ...reference, districts: [...reference.districts, { id: 2, name: "測試二區", sort_order: 2 }],
+  } }) });
   await login(page);
   await page.getByRole("button", { name: "更新統計" }).click();
-  const rows = page.locator("#district-activity-stats-rows tr");
+  const cards = page.locator("#district-activity-cards > .mini-card");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0).locator("h3")).toHaveText("林森 有效登記 1 人");
+  await expect(cards.nth(0).locator("thead th")).toHaveText(["活動", "參加", "不參加", "未回覆"]);
+  // No 合計 row: one person attends several activities, so a sum would count them twice.
+  const rows = cards.nth(0).locator("tbody tr");
   await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0).locator("td")).toHaveText(["林森", "測試聚會", "0", "1", "0"]);
-  await expect(rows.nth(1).locator("td")).toHaveText(["林森", "新增活動", "0", "0", "1"]);
+  await expect(rows.nth(0).locator("td")).toHaveText(["測試聚會", "0", "1", "0"]);
+  await expect(rows.nth(1).locator("td")).toHaveText(["新增活動", "0", "0", "1"]);
+  // A district nobody has signed up from still shows, with zeros.
+  await expect(cards.nth(1).locator("h3")).toHaveText("測試二區 有效登記 0 人");
+  await expect(cards.nth(1).locator("tbody tr").nth(0).locator("td")).toHaveText(["測試聚會", "0", "0", "0"]);
+  await expect(page.locator("#district-stats-rows tr.total td")).toHaveText(["合計", "1", "NT$0"]);
 });
 
 test("voiding a registration requires a reason and sends it", async ({ page }) => {
@@ -753,17 +765,20 @@ test("statistics count hosting answers and capacity", async ({ page }) => {
   await login(page);
   await page.getByRole("button", { name: "更新統計" }).click();
   const answers = page.locator("#hosting-status-stats-rows tr");
-  await expect(answers).toHaveCount(4);
+  await expect(answers).toHaveCount(5);
   await expect(answers.nth(0).locator("td")).toHaveText(["是", "2"]);
   await expect(answers.nth(1).locator("td")).toHaveText(["否", "0"]);
   await expect(answers.nth(2).locator("td")).toHaveText(["家人已登記開家接待", "1"]);
   await expect(answers.nth(3).locator("td")).toHaveText(["未回覆", "1"]);
+  await expect(answers.nth(4)).toHaveClass("total");
+  await expect(answers.nth(4).locator("td")).toHaveText(["合計", "4"]);
   const capacity = page.locator("#hosting-capacity-stats-rows tr");
   await expect(capacity).toHaveCount(5);
   await expect(capacity.nth(0).locator("td")).toHaveText(["夫婦", "1", "4"]);
   await expect(capacity.nth(1).locator("td")).toHaveText(["弟兄", "1", "2"]);
   await expect(capacity.nth(2).locator("td")).toHaveText(["姊妹", "0", "0"]);
   await expect(capacity.nth(3).locator("td")).toHaveText(["不拘", "0", "0"]);
+  await expect(capacity.nth(4)).toHaveClass("total");
   await expect(capacity.nth(4).locator("td")).toHaveText(["合計", "2", "6"]);
   // Pickup counts every answer with seats, here 是 (1) and 家人已登記開家接待 (2).
   await expect(page.locator("#hosting-pickup-stats-rows tr td")).toHaveText(["可配搭接機", "2", "3"]);
@@ -956,7 +971,8 @@ test("statistics estimate fees by identity, with cost, subsidy and the sign-ups 
   await expect(page.locator("#stats-summary")).toHaveText("有效登記 4 筆；預估費用 NT$450；預估成本 NT$300；"
     + "預估補貼 NT$110（測試晚餐尚未設定實際成本，未計入）。用餐身分未回覆 1 人，先以一般價計算。"
     + "不符報名對象（限定前已報名）：測試限定午餐 1 人。");
-  await expect(page.locator("#district-stats-rows tr td")).toHaveText(["林森", "4", "NT$450"]);
+  // The 合計 row matches the summary above.
+  await expect(page.locator("#district-stats-rows tr td")).toHaveText(["林森", "4", "NT$450", "合計", "4", "NT$450"]);
 });
 
 test("statistics name no activity once every charged one has a cost", async ({ page }) => {
@@ -1136,6 +1152,11 @@ test("admin forms and statistics are compact: fields share rows on wide screens 
   expect(await sameRow('#create-staff-form label:has([name="username"])', '#create-staff-form label:has([name="display_name"])')).toBe(wide);
   // The short statistics tables share a row on wide screens.
   expect(await sameRow("#section-stats .stat-cards > :nth-child(1)", "#section-stats .stat-cards > :nth-child(2)")).toBe(wide);
+  // Every statistics card fits its table without a sideways scroll bar (the 接機 card had one).
+  await page.getByRole("button", { name: "更新統計" }).click();
+  await expect(page.locator("#district-activity-cards > .mini-card")).toHaveCount(1);
+  expect(await page.locator("#section-stats .stat-cards .table-scroll").evaluateAll((boxes) => boxes
+    .filter((box) => box.scrollWidth > box.clientWidth).map((box) => box.closest(".mini-card").querySelector("h3").textContent))).toEqual([]);
   // 修改帳號 and 設定密碼 are two cards side by side.
   await page.locator("#staff-rows tr").first().getByRole("button", { name: "修改" }).click();
   expect(await sameRow("#staff-editor > :nth-child(1)", "#staff-editor > :nth-child(2)")).toBe(wide);

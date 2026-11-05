@@ -105,6 +105,9 @@ main.wide .compact-form { max-width: none; }
 /* 統計: the four short tables share a row instead of each spanning the page. */
 .stat-cards { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); align-items: start; margin: 1rem 0; }
 .stat-cards .table-scroll { margin: 0; }
+/* A narrow card fits its three or four columns: tighter cells, and headers and names may wrap. */
+.stat-cards :is(th, td) { padding-inline: .4rem; white-space: normal; }
+tr.total td { border-top: 2px solid #c9d4ce; background: #f6f9f7; font-weight: 700; }
 
 .table-scroll { overflow-x: auto; margin: .5rem 0 1rem; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -114,7 +117,6 @@ tbody tr:hover { background: #f9fbfa; }
 td button { min-height: 2rem; margin: 0 .4rem 0 0; padding: .25rem .8rem; color: #23624b; background: #fff; font-size: .9rem; }
 td button:hover { background: #e8f1ec; }
 table.numeric td:not(:first-child), table.numeric th:not(:first-child) { text-align: right; }
-table.two-labels td:nth-child(2), table.two-labels th:nth-child(2) { text-align: left; }
 
 /* Activity reorder: the last column's header holds 調整排序 (and 取消 while reordering); its ☰ handles
    show only while reordering. touch-action keeps a finger drag from scrolling the page on phones. */
