@@ -148,7 +148,7 @@ export async function handler(request) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }
     let query = database.from("registrations")
-      .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),registration_hosting(status,guest_type,guest_count,family_count,note)",
+      .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),registration_hosting(status,guest_type,guest_count)",
         beforeSerial === null ? { count: "exact" } : undefined)
       .order("serial_no", { ascending: false });
     query = beforeSerial === null ? query.range(page * 100, page * 100 + 99)
@@ -169,7 +169,7 @@ export async function handler(request) {
 
   if (body.action === "list_reference") {
     const [settings, districts, activities, program] = await Promise.all([
-      database.from("site_settings").select("event_name,venue,address,registration_deadline_at,is_registration_open,is_lookup_open,is_hosting_open,hosting_description").single(),
+      database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_lookup_open,is_hosting_open,hosting_description").single(),
       database.from("districts").select("id,name,sort_order").order("sort_order"),
       database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,is_published,sort_order").order("sort_order"),
       database.from("program_items").select("id,event_date,start_time,end_time,title,note,sort_order,is_visible").order("sort_order"),

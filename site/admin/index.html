@@ -114,7 +114,7 @@
           <div class="table-scroll"><table class="numeric two-labels"><thead><tr><th>區</th><th>活動</th><th>參加</th><th>不參加</th><th>未回覆</th></tr></thead><tbody id="district-activity-stats-rows"></tbody></table></div>
           <h3>開家接待</h3>
           <div class="table-scroll"><table class="numeric"><thead><tr><th>回覆</th><th>登記數</th></tr></thead><tbody id="hosting-status-stats-rows"></tbody></table></div>
-          <div class="table-scroll"><table class="numeric"><thead><tr><th>可接待對象</th><th>組數</th><th>人數</th></tr></thead><tbody id="hosting-capacity-stats-rows"></tbody></table></div>
+          <div class="table-scroll"><table class="numeric"><thead><tr><th>接待對象</th><th>登記數</th><th>人數</th></tr></thead><tbody id="hosting-capacity-stats-rows"></tbody></table></div>
         </section>
 
         <section id="admin-accounts" class="card" hidden>
@@ -145,13 +145,18 @@
 
         <section id="admin-settings" class="card" hidden>
           <h2>網站與登記設定</h2>
-          <form id="settings-form" class="staff-form">
-            <label>活動名稱<input name="event_name" maxlength="200" required /></label>
-            <label>地點<input name="venue" maxlength="200" /></label>
-            <label>地址<input name="address" maxlength="300" /></label>
-            <label>截止時間（台灣時間；留空代表不設期限）<input name="registration_deadline_at" type="datetime-local" /></label>
-            <label class="check"><input name="is_registration_open" type="checkbox" /> 開放登記</label>
-            <label class="check"><input name="is_lookup_open" type="checkbox" /> 開放公開查詢與修改（緊急時取消勾選可立即停止）</label>
+          <form id="settings-form" class="staff-form registration-form">
+            <div class="registration-columns">
+              <div class="registration-main">
+                <label>活動名稱<input name="event_name" maxlength="200" required /></label>
+                <label>地點<input name="venue" maxlength="200" /></label>
+                <label>地址<input name="address" maxlength="300" /></label>
+                <label>截止時間（台灣時間；留空代表不設期限）<input name="registration_deadline_at" type="datetime-local" /></label>
+                <label class="check"><input name="is_registration_open" type="checkbox" /> 開放登記</label>
+                <label class="check"><input name="is_lookup_open" type="checkbox" /> 開放公開查詢與修改（緊急時取消勾選可立即停止）</label>
+              </div>
+              <label>備註（選填，500 字內，顯示在公開頁地址下方，例如交通資訊；https:// 開頭的網址可點擊，地圖請用分享按鈕產生的短網址）<textarea name="event_note" maxlength="500" rows="12"></textarea></label>
+            </div>
             <button type="submit">儲存網站設定</button>
           </form>
         </section>
