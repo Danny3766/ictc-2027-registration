@@ -33,6 +33,28 @@ async function query(page, name = "測試登記", district = "1") {
   await page.getByRole("button", { name: "查詢" }).click();
 }
 
+test("returning to the page starts both name fields empty, so a shared device does not show the previous name", async ({ page }) => {
+  await page.route("**/functions/v1/registration", (route) => route.fulfill({ json: openPage() }));
+  await page.goto("/");
+  await page.locator('#registration-form input[name="full_name"]').fill("前一位登記者");
+  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
+  await page.locator('#query-form input[name="full_name"]').fill("前一位查詢者");
+  // Leaving and pressing 上一頁 makes the browser refill the form, as a reload does in real browsers
+  // (page.reload() in tests does not).
+  await page.goto("/admin/");
+  await page.goBack();
+  await expect(page.locator("#activities .activity")).not.toHaveCount(0);
+  await expect(page.locator('#registration-form input[name="full_name"]')).toHaveValue("");
+  await expect(page.locator('#query-form input[name="full_name"]')).toHaveValue("");
+  // A page restored whole from the back/forward cache (which tests cannot force) clears the names too.
+  await page.locator('#registration-form input[name="full_name"]').fill("前一位登記者");
+  await page.getByRole("tab", { name: "查詢或修改登記" }).click();
+  await page.locator('#query-form input[name="full_name"]').fill("前一位查詢者");
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+  await expect(page.locator('#registration-form input[name="full_name"]')).toHaveValue("");
+  await expect(page.locator('#query-form input[name="full_name"]')).toHaveValue("");
+});
+
 test("an activity's map link opens in a new tab, and only http(s) links are shown", async ({ page }) => {
   await page.route("**/functions/v1/registration", (route) => route.fulfill({ json: { ...openPage(), activities: [
     { id: 1, title: "有地圖", map_url: "https://share.google/abc123" },
