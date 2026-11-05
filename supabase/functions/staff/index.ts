@@ -156,7 +156,7 @@ export async function handler(request) {
     const [settings, districts, activities, program] = await Promise.all([
       database.from("site_settings").select("event_name,venue,address,registration_deadline_at,is_registration_open,is_lookup_open").single(),
       database.from("districts").select("id,name,sort_order").order("sort_order"),
-      database.from("activities").select("id,category,title,starts_at,ends_at,venue,address,map_url,description,fee_amount,is_published,sort_order").order("sort_order"),
+      database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,is_published,sort_order").order("sort_order"),
       database.from("program_items").select("id,event_date,start_time,end_time,title,note,sort_order,is_visible").order("sort_order"),
     ]);
     if ([settings, districts, activities, program].some((item) => item.error)) {

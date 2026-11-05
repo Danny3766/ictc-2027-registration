@@ -31,7 +31,7 @@
 - [ ] 確認測試站連到開發資料環境並顯示測試站提示；正式環境設定不可混用。
 - [ ] 在 Dashboard 確認 Edge Function 的 Verify JWT：`staff` 開啟、`registration` 關閉。Dashboard 部署不讀取 `supabase/config.toml`，兩邊設定須一致。
 - [ ] 套用 `202611040001_staff_backoffice_and_name_lookup.sql` 前，清空測試站的登記資料（`registrations`、`registration_choices`），並通知試填者以新流程重填；試填回饋先另行保存。
-- [ ] 測試站已套用 `202611030001` 至 `202611030004`；接著依序套用 `202611040001_staff_backoffice_and_name_lookup.sql`、`202611040002_activity_reorder.sql`，部署 `registration` 與 `staff` Edge Function。
+- [ ] 測試站已套用 `202611030001` 至 `202611030004`；接著依序套用 `202611040001_staff_backoffice_and_name_lookup.sql`、`202611040002_activity_reorder.sql`、`202611040003_activity_time_precision.sql`，部署 `registration` 與 `staff` Edge Function。
 - [ ] 在 Edge Function secrets 新增至少 32 字元的 `RATE_LIMIT_KEY`；移除已不使用的 `QUERY_CODE_PEPPER`。
 - [ ] 在本機與測試站檢查活動、時間表、登記、姓名與區查詢、修改活動選擇及完成頁摘要。
 
@@ -45,7 +45,7 @@
   - [ ] Dashboard 的 Verify JWT 設定下，後台請求與瀏覽器 preflight 都能通過。
   - [ ] Auth 錯誤碼 `email_exists`、`invalid_credentials` 與程式判斷一致。
   - [ ] 資料庫 locale 對非英文字母的大小寫轉換與後台一致：`select registration_name_key('JOSÉ')` 須回傳 `josé`。
-- [ ] Playwright 在 Desktop Chromium、Desktop WebKit、Mobile Chrome、Mobile Safari 模擬驗證建立、姓名與區查詢、儲存、查無資料、同名同區擋下及截止行為。
+- [x] Playwright 在 Desktop Chromium、Desktop WebKit、Mobile Chrome、Mobile Safari 模擬驗證建立、姓名與區查詢、確認／修改狀態、儲存、取消與未儲存變更提醒、查無資料、同名同區擋下及截止行為。
 - [ ] 確認匿名角色無法直接讀取敏感資料，並驗證依來源限速與全站上限有效、到期自動恢復。
 - [ ] 使用獨立 `admin` 與 `staff` 測試帳號，驗收登入、角色權限、名單、補登與更正姓名或區的同名擋下、作廢後可重新登記、統計、CSV 及設定；將結果記在 `docs/驗收紀錄.md`。
 - [ ] 邀請弟兄姊妹在測試站實際操作手機流程，記錄並修正阻擋使用的問題。
@@ -142,7 +142,7 @@ Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js se
 - [ ] 公開登記頁：姓名、區與當下所有公開活動。
 - [ ] 每個公開活動都須明確選擇參加或不參加，允許全部不參加。
 - [ ] 完成頁顯示這次送出的姓名、區與各活動選擇，並提示日後以相同姓名與區查詢；流水號僅供內部核對。
-- [ ] 查詢後只能修改活動選擇，並以單一「儲存」按鈕操作；沒有變更時不呼叫 API，有變更且儲存成功後更新前端比較基準。姓名與區由服事者更正。
+- [x] 查詢後先以純文字確認參加／不參加／未回覆；按「修改活動選擇」才顯示 radio、儲存與取消。沒有變更時不能儲存；有未儲存變更時，取消、切換頁籤、重新查詢或離開頁面須提醒。儲存成功後更新比較基準並回到確認狀態。姓名與區由服事者更正。
 - [ ] 截止後仍可查看，不能自行儲存修改。
 - [ ] 同區已有相同姓名的有效登記時擋下送出，提示改用查詢。
 
@@ -193,7 +193,7 @@ Node.js 與 npm 只用於開發工具；正式 GitHub Pages 不執行 Node.js se
 - [ ] 以桌機、筆電、平板、手機寬度驗證 RWD 版面與主要操作；實際裝置驗收另列於正式環境關卡。
 - [x] 全部 migration 可在乾淨的本機 PostgreSQL 依版本順序套用；已套用的版本不得重複執行，Dashboard 部署須記錄版本。
 - [ ] RLS 允許與拒絕案例通過。
-- [ ] Playwright 覆蓋建立、姓名與區查詢、儲存、查無資料、同名同區擋下與截止規則。
+- [x] Playwright 覆蓋建立、姓名與區查詢、確認／修改狀態、儲存、取消與未儲存變更提醒、查無資料、同名同區擋下與截止規則。
 - [ ] 自動測試 Desktop Chromium、Desktop WebKit、Mobile Chrome 與 Mobile Safari 模擬。
 - [ ] 完成後台 `admin` 與 `staff` 權限、主要操作及拒絕案例驗收；紀錄於 `docs/驗收紀錄.md`。
 - [ ] 測試資料須能與正式資料區分，完成後依核准程序處理。

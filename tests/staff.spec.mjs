@@ -84,19 +84,50 @@ async function login(page) {
   await page.getByRole("button", { name: "登入" }).click();
 }
 
-test("saving an edited activity leaves the form ready to create a new one", async ({ page }) => {
+test("activity sort is preserved when editing and defaults to the end when creating", async ({ page }) => {
   const saved = [];
   await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); }, "測試登記", threeActivities);
   await login(page);
   await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).first().click();
+  await page.locator('#activity-form input[name="sort_order"]').fill("");
   await page.locator("#activity-form").getByRole("button", { name: /^儲存活動/ }).click();
   await expect(page.locator("#message")).toHaveText("設定已儲存。");
   await page.locator('#activity-form input[name="title"]').fill("新活動");
-  await page.locator('#activity-form input[name="sort_order"]').fill("9");
   await page.getByRole("button", { name: "儲存活動" }).click();
   await expect.poll(() => saved.length).toBe(2);
   expect(saved[0].id).toBe("1");
+  expect(saved[0].sort_order).toBe(1);
   expect(saved[1].id).toBeUndefined();
+  expect(saved[1].sort_order).toBe(4);
+});
+
+test("activity dates allow an optional Taiwan time", async ({ page }) => {
+  let saved;
+  await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved = payload.data; }, "測試登記", {
+    list_reference: () => ({ json: {
+      settings: { event_name: "測試", is_registration_open: false },
+      districts: [{ id: 1, name: "林森", sort_order: 1 }],
+      activities: [{
+        id: 1, title: "日期活動", category: "meeting", starts_at: "2027-02-20T00:00:00+08:00",
+        starts_at_has_time: false, ends_at: null, ends_at_has_time: false, is_published: true, sort_order: 1,
+      }],
+      program: [],
+    } }),
+  });
+  await login(page);
+  await expect(page.locator("#activity-rows tr").first()).toContainText("2/20");
+  await expect(page.locator("#activity-rows tr").first()).not.toContainText("00:00");
+  await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).click();
+  const form = page.locator("#activity-form");
+  await expect(form.locator('input[name="starts_on"]')).toHaveValue("2027-02-20");
+  await expect(form.locator('input[name="starts_time"]')).toHaveValue("");
+  await form.locator('input[name="starts_time"]').fill("12:30");
+  await form.getByRole("button", { name: /^儲存活動/ }).click();
+  await expect.poll(() => saved).toBeTruthy();
+  expect(saved.starts_at).toBe("2027-02-20T12:30:00+08:00");
+  expect(saved.starts_at_has_time).toBe(true);
+  expect(saved.ends_at).toBeNull();
+  expect(saved.ends_at_has_time).toBe(false);
 });
 
 test("cancelling an edit makes the next save create a new row", async ({ page }) => {

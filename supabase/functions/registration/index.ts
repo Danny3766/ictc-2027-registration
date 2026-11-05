@@ -73,7 +73,7 @@ export async function handler(request) {
     const [settings, districts, activities, program] = await Promise.all([
       database.from("site_settings").select("event_name,venue,address,registration_deadline_at,is_registration_open").single(),
       database.from("districts").select("id,name").order("sort_order"),
-      database.from("activities").select("id,category,title,starts_at,ends_at,venue,address,map_url,description,fee_amount").eq("is_published", true).order("sort_order"),
+      database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount").eq("is_published", true).order("sort_order"),
       database.from("program_items").select("event_date,start_time,end_time,title,note").eq("is_visible", true).order("sort_order"),
     ]);
     const failed = [settings, districts, activities, program].find((result) => result.error);
