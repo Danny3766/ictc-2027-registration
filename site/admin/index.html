@@ -26,12 +26,12 @@
       </section>
 
       <section id="change-password-panel" class="card" hidden>
-        <h2>更改初始密碼</h2>
-        <p>首次登入或密碼重設後須更改密碼，完成後才能使用後台。</p>
+        <h2 id="change-password-title">更改初始密碼</h2>
+        <p id="change-password-intro">首次登入或密碼重設後須更改密碼，完成後才能使用後台。</p>
         <form id="change-password-form" class="staff-form">
-          <label>目前密碼（初始密碼）<input name="current_password" type="password" autocomplete="current-password" required /></label>
+          <label>目前密碼<input name="current_password" type="password" autocomplete="current-password" required /></label>
           <label>新密碼（至少 12 字元；中文字約可 24 字）<input name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required /></label>
-          <button type="submit">更改密碼</button>
+          <div class="form-buttons"><button type="submit">更改密碼</button><button id="cancel-change-password" type="button" class="secondary" hidden>取消</button></div>
         </form>
       </section>
 
@@ -45,6 +45,7 @@
           <a href="#admin-hosting" data-admin-link hidden>開家接待</a>
           <a href="#admin-activities" data-admin-link hidden>活動</a>
           <a href="#admin-program" data-admin-link hidden>時間表</a>
+          <button id="change-password-button" type="button" class="secondary">更改密碼</button>
           <button id="logout-button" type="button" class="secondary">登出</button>
         </nav>
         <section id="section-registrations" class="card">
@@ -118,15 +119,28 @@
 
         <section id="admin-accounts" class="card" hidden>
           <h2>服事者帳號</h2>
+          <p class="hint">密碼由管理員設定並私下交付，服事者不需再更改；替其他管理員設定的密碼，對方下次登入須改成自己的。請勿透過群組訊息傳送密碼。</p>
           <form id="create-staff-form" class="staff-form">
-            <label>帳號<input name="username" minlength="3" maxlength="31" pattern="[a-z][a-z0-9_-]*" required /></label>
+            <label>帳號<input name="username" minlength="3" maxlength="31" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required /></label>
             <label>顯示名稱<input name="display_name" maxlength="100" required /></label>
-            <label>所屬區<select name="district_id"><option value="">未指定</option></select></label>
             <label>角色<select name="role"><option value="staff">服事者</option><option value="admin">管理員</option></select></label>
+            <label>密碼（至少 12 字元）<input name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" data-1p-ignore data-lpignore="true" required /></label>
             <button type="submit">建立帳號</button>
           </form>
-          <p id="temporary-password" class="message" hidden></p>
           <div class="table-scroll"><table><thead><tr><th>帳號</th><th>名稱</th><th>角色</th><th>狀態</th><th>密碼</th><th>操作</th></tr></thead><tbody id="staff-rows"></tbody></table></div>
+          <div id="staff-editor" hidden>
+            <h3 id="staff-editor-title">修改帳號</h3>
+            <form id="edit-staff-form" class="staff-form">
+              <label>帳號（改名後須用新帳號登入）<input name="username" minlength="3" maxlength="31" pattern="[a-z][a-z0-9_-]*" autocomplete="off" required /></label>
+              <label>顯示名稱<input name="display_name" maxlength="100" required /></label>
+              <div class="form-buttons"><button type="submit">儲存帳號</button><button id="close-staff-editor" type="button" class="secondary">關閉</button></div>
+            </form>
+            <form id="staff-password-form" class="staff-form">
+              <label>新密碼（至少 12 字元；設定後對方所有裝置會登出）<input name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" data-1p-ignore data-lpignore="true" required /></label>
+              <button type="submit">設定密碼</button>
+            </form>
+            <p id="staff-password-self" class="hint" hidden>自己的密碼請用上方導覽列的「更改密碼」修改。</p>
+          </div>
         </section>
 
         <section id="admin-settings" class="card" hidden>

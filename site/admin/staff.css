@@ -24,6 +24,7 @@ textarea { width: 100%; min-height: 6rem; padding: .65rem .75rem; border: 1px so
 .staff-nav a { padding: .35rem .6rem; border-radius: .4rem; color: #23624b; font-weight: 600; text-decoration: none; }
 .staff-nav a:hover, .staff-nav a:focus-visible { background: #e8f1ec; }
 .staff-nav button { margin: 0 0 0 auto; min-height: 2.25rem; padding: .3rem 1rem; }
+.staff-nav #logout-button { margin-left: 0; }
 .card { scroll-margin-top: 4.5rem; }
 .card h3 { margin: 1.5rem 0 .5rem; padding-top: 1rem; border-top: 1px solid #e5ebe8; font-size: 1.05rem; }
 
@@ -111,3 +112,6 @@ tr.dragging .drag-handle { cursor: grabbing; }
   #admin-activities.reordering :is(th, td):nth-child(4),
   #admin-activities.reordering :is(th, td):nth-child(5) { display: none; }
 }
+
+/* The password form is a separate action from renaming, so it gets its own space. */
+#staff-password-form { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5ebe8; }

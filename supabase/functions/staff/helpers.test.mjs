@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nameKey, validPassword, validUsername } from "./index.ts";
+import { isWeakPassword, nameKey, sameUser, validPassword, validUsername } from "./index.ts";
 
 test("staff password length is bounded before privileged update", () => {
   assert.equal(validPassword("a".repeat(11)), false);
@@ -25,4 +25,17 @@ test("staff search uses the same name key as the database lookup", () => {
   assert.equal(nameKey("王　小明"), "王小明");
   assert.equal(nameKey("Ｊｏｈｎ Smith"), "johnsmith");
   assert.equal(nameKey("王\u200B小明\uFEFF"), "王小明");
+});
+
+test("an admin cannot set their own password by changing the UUID's letter case", () => {
+  const id = "123e4567-e89b-42d3-a456-426614174000";
+  assert.equal(sameUser(id.toUpperCase(), id), true);
+  assert.equal(sameUser(id, "323e4567-e89b-42d3-a456-426614174000"), false);
+  assert.equal(sameUser(undefined, id), false);
+});
+
+test("only Auth's weak_password code counts as a weak password", () => {
+  assert.equal(isWeakPassword({ code: "weak_password", status: 422 }), true);
+  assert.equal(isWeakPassword({ code: "validation_failed", status: 422 }), false);
+  assert.equal(isWeakPassword(null), false);
 });
