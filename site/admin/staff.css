@@ -44,7 +44,7 @@ main.wide .registration-form { max-width: none; }
 .registration-main { display: grid; gap: 1rem; }
 .hosting-panel { padding: 1rem; border: 1px solid #d8e1dc; border-radius: .75rem; background: #f9fbfa; }
 .hosting-panel > legend { float: left; width: 100%; margin-bottom: .5rem; padding: 0; }
-.hosting-panel > legend + * { clear: left; }
+.hosting-panel > legend ~ * { clear: left; }
 .hosting-panel .hosting-options { flex-direction: column; gap: 0; }
 /* .staff-form label stacks a control under its text; radio choices keep the button beside it. */
 .staff-form .hosting-options label, .staff-form .hosting-guest label { display: flex; align-items: center; gap: .4rem; }
