@@ -19,7 +19,7 @@ const Meals = (() => {
     const prices = [];
     if (activity.fee_amount != null) prices.push(`${hasStudentPrice(activity) ? "一般 " : ""}NT$${activity.fee_amount}／人`);
     if (hasStudentPrice(activity)) prices.push(`學生 NT$${activity.student_fee_amount}／人`);
-    return prices.length ? `規劃費用：${prices.join("，")}` : "";
+    return prices.length ? `負擔費用：${prices.join("，")}` : "";
   }
 
   const radio = (container, activity, value) =>
@@ -42,7 +42,10 @@ const Meals = (() => {
       reverted.className = "hint audience-reverted";
       reverted.textContent = revertedNote;
       reverted.hidden = true;
-      wrapper.append(note, reverted);
+      // On the public page the note sits to the right of 參加／不參加 (wrapping below on narrow screens);
+      // the back office has no options row, so it stays on its own line there.
+      (wrapper.querySelector(".activity-options") ?? wrapper).append(note);
+      wrapper.append(reverted);
     }
     if (!activities.some(hasStudentPrice)) return;
     const block = document.createElement("div");

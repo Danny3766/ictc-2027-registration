@@ -38,7 +38,8 @@ fieldset { padding: 0; border: 0; }
 .program-slot:last-child { border-bottom: 0; }
 .program-slot time { color: #23624b; font-weight: 700; font-variant-numeric: tabular-nums; }
 .program-slot p { margin: .25rem 0 0; color: #59655f; }
-.activity-options { display: flex; gap: 1rem; }
+.activity-options { display: flex; flex-wrap: wrap; align-items: center; gap: 0 1rem; }
+.activity-options .audience-note { margin: .4rem 0; }
 .audience-reverted { color: #9a3412; }
 .activity-options label { display: flex; align-items: center; gap: .35rem; margin: .4rem 0; }
 .activity-options input { width: auto; min-height: auto; margin: 0; }

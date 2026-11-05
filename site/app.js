@@ -124,22 +124,23 @@ function mapLink(value) {
   return `<p class="hint"><a href="${href}" target="_blank" rel="noopener noreferrer">查看地圖</a></p>`;
 }
 
-function activityDetails(activity) {
+// The query tab leaves out the map link; it is only for people deciding to register.
+function activityDetails(activity, showMap = true) {
     const time = activityTime(activity);
     return `<strong>${escapeHtml(activity.title)}</strong>
       ${time ? `<p class="hint">時間：${escapeHtml(time)}</p>` : ""}
       ${activity.venue ? `<p class="hint">地點：${escapeHtml(activity.venue)}</p>` : ""}
       ${activity.address ? `<p class="hint">地址：${escapeHtml(activity.address)}</p>` : ""}
-      ${activity.map_url ? mapLink(activity.map_url) : ""}
+      ${showMap && activity.map_url ? mapLink(activity.map_url) : ""}
       ${Meals.feeText(activity) ? `<p class="hint">${escapeHtml(Meals.feeText(activity))}</p>` : ""}
       ${activity.description ? `<p class="hint">${escapeHtml(activity.description)}</p>` : ""}`;
 }
 
-function activityFields(activities, values = new Map()) {
+function activityFields(activities, values = new Map(), showMap = true) {
   return activities.map((activity) => {
     const selected = values.get(activity.id);
     return `<div class="activity" data-activity="${activity.id}">
-      ${activityDetails(activity)}
+      ${activityDetails(activity, showMap)}
       <div class="activity-options">
         <label><input type="radio" name="activity_${activity.id}" value="true" ${selected === true ? "checked" : ""} required>參加</label>
         <label><input type="radio" name="activity_${activity.id}" value="false" ${selected === false ? "checked" : ""} required>不參加</label>
@@ -153,7 +154,7 @@ function activitySummaryFields(activities, values) {
     const selected = values.get(activity.id);
     const status = selected === true ? "參加" : selected === false ? "不參加" : "未回覆";
     return `<div class="activity">
-      ${activityDetails(activity)}
+      ${activityDetails(activity, false)}
       <p class="activity-status">登記狀態：${status}</p>
     </div>`;
   }).join("");
@@ -342,7 +343,7 @@ function showConfirmation() {
 function beginEditing() {
   if (!queriedCanChange || !queriedChoicesBaseline) return;
   editMode = true;
-  editActivities.innerHTML = activityFields(pageData.activities, choicesMap(queriedChoicesBaseline));
+  editActivities.innerHTML = activityFields(pageData.activities, choicesMap(queriedChoicesBaseline), false);
   Meals.render(editActivities, pageData.activities, queriedIdentityBaseline);
   if (hostingOpen()) Hosting.render(editHosting, queriedHostingBaseline);
   syncMeals();

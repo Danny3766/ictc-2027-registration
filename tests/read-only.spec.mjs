@@ -46,6 +46,23 @@ test("an activity's map link opens in a new tab, and only http(s) links are show
   await expect(links).toHaveAttribute("target", "_blank");
 });
 
+test("the query tab does not show map links, in the summary or while editing", async ({ page }) => {
+  const activities = [{ id: 1, title: "測試活動", map_url: "https://share.google/abc123" }];
+  await page.route("**/functions/v1/registration", (route) => {
+    const body = route.request().postDataJSON();
+    if (body?.action === "query") return route.fulfill({ json: queried(true) });
+    return route.fulfill({ json: { ...openPage(), activities } });
+  });
+  await page.goto("/");
+  await expect(page.locator("#activities a")).toHaveText("查看地圖");
+  await query(page);
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
+  await expect(page.locator("#edit-activities a")).toHaveCount(0);
+  await page.locator("#start-edit").click();
+  await expect(page.locator('#edit-activities input[name="activity_1"]').first()).toBeVisible();
+  await expect(page.locator("#edit-activities a")).toHaveCount(0);
+});
+
 test("closed registration remains queryable by name and district and disables edits", async ({ page }) => {
   const bodies = [];
   await page.route("**/functions/v1/registration", async (route) => {
@@ -307,7 +324,7 @@ test("registration tabs and success page show what was submitted", async ({ page
   await expect(page.locator("#activities .activity").first()).toContainText("時間：2/21");
   await expect(page.locator("#activities .activity").first()).not.toContainText("00:00");
   await expect(page.locator("#activities .activity").nth(1)).toContainText("時間：2/20 12:30–14:00");
-  await expect(page.locator("#activities")).toContainText("規劃費用：NT$250／人");
+  await expect(page.locator("#activities")).toContainText("負擔費用：NT$250／人");
   await page.locator('#registration-form input[name="full_name"]').fill(" David Wang ");
   await page.locator('#registration-form select[name="district_id"]').selectOption("2");
   await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
@@ -766,8 +783,8 @@ test("a student-priced meal asks for the identity, required, and the success pag
     return route.fulfill({ status: 201, json: { success: true } });
   });
   await page.goto("/");
-  await expect(page.locator('[data-activity="2"]')).toContainText("規劃費用：一般 NT$100／人，學生 NT$60／人");
-  await expect(page.locator('[data-activity="3"]')).toContainText("規劃費用：NT$90／人");
+  await expect(page.locator('[data-activity="2"]')).toContainText("負擔費用：一般 NT$100／人，學生 NT$60／人");
+  await expect(page.locator('[data-activity="3"]')).toContainText("負擔費用：NT$90／人");
   const identity = page.locator("#activities .meal-identity");
   await expect(identity).toBeHidden();
   await page.locator('#registration-form input[name="full_name"]').fill("學生測試");
@@ -827,7 +844,14 @@ test("a restricted activity opens and closes with the hosting answer on screen",
   const no = lunch.locator('input[value="false"]');
   const reverted = lunch.locator(".audience-reverted");
   const hosting = page.locator("#hosting-section");
-  await expect(lunch).toContainText("本項優先開放有開家接待的聖徒報名");
+  const note = lunch.locator(".activity-options .audience-note");
+  await expect(note).toHaveText("本項優先開放有開家接待的聖徒報名");
+  // The note sits on the same line as 參加／不參加 wherever the row has room.
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    const [option, hint] = await Promise.all([lunch.locator(".activity-options label").first().boundingBox(), note.boundingBox()]);
+    expect(Math.abs((option.y + option.height / 2) - (hint.y + hint.height / 2))).toBeLessThan(4);
+    expect(hint.x).toBeGreaterThan(option.x);
+  }
   // No hosting answer yet: the activity shows, locked to 不參加, with nothing to answer.
   await expect(no).toBeChecked();
   await expect(yes).toBeDisabled();
