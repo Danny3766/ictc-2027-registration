@@ -14,7 +14,7 @@ let count = 0;
 let search = "";
 let visibleRegistrations = [];
 let selectedRegistration;
-const adminSections = ["#admin-accounts", "#admin-settings", "#admin-activities", "#admin-program"];
+const adminSections = ["#admin-accounts", "#admin-settings", "#admin-hosting", "#admin-activities", "#admin-program"];
 
 function showAdminSections(visible) {
   for (const selector of adminSections) document.querySelector(selector).hidden = !visible;
@@ -29,6 +29,9 @@ const labels = {
   category: { meeting: "聚會", meal: "用餐", other: "其他" },
 };
 const label = (group, value) => labels[group][value] ?? value;
+
+// registration_id is the hosting table's primary key, so the API embeds the one row as an object.
+const hostingOf = (registration) => Hosting.normalize(registration.registration_hosting);
 
 // Short Taiwan time, for example "11/4 08:30".
 function shortTime(value) {
@@ -98,6 +101,8 @@ function clearSession() {
   document.querySelector("#stats-rows").replaceChildren();
   document.querySelector("#district-stats-rows").replaceChildren();
   document.querySelector("#district-activity-stats-rows").replaceChildren();
+  document.querySelector("#hosting-status-stats-rows").replaceChildren();
+  document.querySelector("#hosting-capacity-stats-rows").replaceChildren();
   document.querySelector("#stats-summary").textContent = "";
   document.querySelector("#registration-detail").hidden = true;
   selectedRegistration = null;
@@ -147,6 +152,7 @@ async function api(action, values = {}) {
   if (!response.ok) {
     const error = new Error(result.error || "後台暫時無法使用");
     error.status = response.status;
+    error.code = result.code;
     throw error;
   }
   return result;
@@ -276,6 +282,7 @@ function renderReference() {
     ...reference.settings,
     registration_deadline_at: taipeiInput(reference.settings.registration_deadline_at),
   }, false);
+  fillForm(document.querySelector("#hosting-settings-form"), reference.settings, false);
   const staffDistricts = document.querySelector('#create-staff-form select[name="district_id"]');
   staffDistricts.replaceChildren(new Option("未指定", ""));
   for (const district of reference.districts) {
@@ -290,7 +297,7 @@ async function saveReference(event, kind) {
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
   if (form.dataset.editingId) data.id = form.dataset.editingId;
-  for (const name of ["is_registration_open", "is_lookup_open", "is_published", "is_visible"]) {
+  for (const name of ["is_registration_open", "is_lookup_open", "is_hosting_open", "is_published", "is_visible"]) {
     if (form.elements.namedItem(name)) data[name] = form.elements.namedItem(name).checked;
   }
   if (kind === "settings") data.registration_deadline_at = taipeiTimestamp(data.registration_deadline_at);
@@ -311,11 +318,13 @@ async function saveReference(event, kind) {
   }
   if (kind === "settings" && data.is_registration_open && !reference.settings.is_registration_open
     && !confirm("確定開放登記？請先完成正式環境驗收與核准。")) return;
+  if (kind === "hosting" && data.is_hosting_open && !reference.settings.is_hosting_open
+    && !confirm("確定開放開家接待調查？公開登記頁與查詢頁將顯示接待區塊。")) return;
   try {
     await api("save_reference", { kind, data });
     reference = await api("list_reference");
     renderReference();
-    if (kind !== "settings") form.reset();
+    if (!["settings", "hosting"].includes(kind)) form.reset();
     showMessage("設定已儲存。");
   } catch (error) { showMessage(error.message, true); }
 }
@@ -413,6 +422,33 @@ async function showStatistics() {
       districtActivityRows.append(row);
     }
   }
+  showHostingStatistics(registrations);
+}
+
+function showHostingStatistics(registrations) {
+  const answers = { hosting: 0, not_hosting: 0, family_registered: 0, unanswered: 0 };
+  const capacity = { brother: { groups: 0, people: 0 }, sister: { groups: 0, people: 0 }, family: { groups: 0, people: 0 } };
+  for (const registration of registrations) {
+    const answer = hostingOf(registration);
+    answers[answer?.status ?? "unanswered"] += 1;
+    if (answer?.status !== "hosting") continue;
+    capacity[answer.guest_type].groups += answer.family_count ?? 0;
+    capacity[answer.guest_type].people += answer.guest_count;
+  }
+  const statusRows = document.querySelector("#hosting-status-stats-rows");
+  statusRows.replaceChildren();
+  for (const [status, total] of Object.entries(answers)) {
+    const row = document.createElement("tr");
+    for (const value of [Hosting.statusLabels[status] ?? "未回覆", total]) cell(row, value);
+    statusRows.append(row);
+  }
+  const capacityRows = document.querySelector("#hosting-capacity-stats-rows");
+  capacityRows.replaceChildren();
+  for (const [type, total] of Object.entries(capacity)) {
+    const row = document.createElement("tr");
+    for (const value of [Hosting.guestLabels[type], type === "family" ? total.groups : "—", total.people]) cell(row, value);
+    capacityRows.append(row);
+  }
 }
 
 function csvCell(value) {
@@ -424,13 +460,18 @@ function csvCell(value) {
 async function downloadCsv() {
   const activities = currentActivities();
   const districts = new Map(reference.districts.map((item) => [item.id, item.name]));
-  const rows = [["流水號", "姓名", "區", "匯入狀態", ...activities.map((item) => item.title)]];
+  const rows = [["流水號", "姓名", "區", "匯入狀態", ...activities.map((item) => item.title),
+    "接待狀態", "接待對象", "接待人數", "家庭數", "接待備註"]];
   for (const registration of activeRegistrations(await allRegistrations())) {
     const choices = new Map(registration.registration_choices.map((item) => [item.activity_id, item.attending]));
+    const hosting = hostingOf(registration);
     rows.push([
       registration.serial_no, registration.full_name, districts.get(registration.district_id),
       label("import", registration.import_status),
       ...activities.map((item) => !choices.has(item.id) ? "未回覆" : choices.get(item.id) ? "參加" : "不參加"),
+      hosting ? Hosting.statusLabels[hosting.status] : "未回覆",
+      hosting?.guest_type ? Hosting.guestLabels[hosting.guest_type] : "",
+      hosting?.guest_count ?? "", hosting?.family_count ?? "", hosting?.note ?? "",
     ]);
   }
   const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
@@ -480,6 +521,9 @@ function renderNewRegistrationForm() {
   districts.value = entered.get("district_id") ?? "";
   const choices = new Map(choicesFromForm(entered).map((item) => [item.activity_id, item.attending]));
   renderChoiceFields(document.querySelector("#new-registration-choices"), choices);
+  const hosting = document.querySelector("#new-registration-hosting");
+  // Required only while the public survey is open, matching the public form.
+  Hosting.render(hosting, Hosting.read(hosting), Boolean(reference.settings.is_hosting_open));
 }
 
 function choicesFromForm(data) {
@@ -509,6 +553,12 @@ function openRegistration(registration) {
   // Only active rows can be edited; a historical cancelled row can still be voided.
   const isActive = registration.record_status === "active";
   form.querySelectorAll("input, select, button").forEach((control) => control.disabled = !isActive);
+  // Rendered after the loop above, which would otherwise re-enable the hidden hosting fields.
+  // Like an activity, an existing answer cannot go back to 未回覆, but an unanswered one may stay so.
+  const hosting = hostingOf(registration);
+  const hostingFields = document.querySelector("#detail-hosting");
+  Hosting.render(hostingFields, hosting, hosting !== null);
+  if (!isActive) hostingFields.querySelectorAll("input, textarea").forEach((control) => control.disabled = true);
   const voidForm = document.querySelector("#void-form");
   voidForm.reset();
   voidForm.querySelectorAll("input, button").forEach((control) => control.disabled = registration.record_status === "void");
@@ -581,11 +631,12 @@ async function openStaff() {
 }
 
 for (const [selector, kind] of [
-  ["#settings-form", "settings"], ["#activity-form", "activity"], ["#program-form", "program"],
+  ["#settings-form", "settings"], ["#hosting-settings-form", "hosting"],
+  ["#activity-form", "activity"], ["#program-form", "program"],
 ]) {
   const form = document.querySelector(selector);
   form.addEventListener("submit", (event) => saveReference(event, kind));
-  if (kind !== "settings") form.addEventListener("reset", () => setEditing(form, null));
+  if (!["settings", "hosting"].includes(kind)) form.addEventListener("reset", () => setEditing(form, null));
 }
 
 // Activity order: a toggle shows the ☰ column; dragging (mouse or touch, via Pointer Events,
@@ -800,6 +851,7 @@ document.querySelector("#edit-registration-form").addEventListener("submit", asy
     await api("save_registration", {
       registration_id: selectedRegistration.id, full_name: data.get("full_name"),
       district_id: Number(data.get("district_id")), choices,
+      hosting: Hosting.read(document.querySelector("#detail-hosting")),
     });
     await refreshRegistration();
     showMessage("登記資料已儲存。");
@@ -822,6 +874,7 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
       create_request_id: newRegistrationRequestId,
       full_name: data.get("full_name"), district_id: Number(data.get("district_id")),
       choices: choicesFromForm(data),
+      hosting: Hosting.read(document.querySelector("#new-registration-hosting")),
     });
     newRegistrationRequestId = crypto.randomUUID();
     const notice = document.querySelector("#new-registration-code");
@@ -832,6 +885,11 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
     await loadRegistrations();
     showMessage("補登已建立。");
   } catch (error) {
+    if (error.code === "HOSTING_REQUIRED") {
+      // An admin opened hosting after this page loaded; mark the answer required and keep the input.
+      reference.settings.is_hosting_open = true;
+      renderNewRegistrationForm();
+    }
     showMessage(error.message, true);
   } finally {
     submit.disabled = false;

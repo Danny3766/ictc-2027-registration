@@ -7,6 +7,8 @@
 }
 
 * { box-sizing: border-box; }
+/* The hidden attribute must win over display rules such as label and fieldset below. */
+[hidden] { display: none !important; }
 body { margin: 0; }
 .container { width: min(100% - 2rem, 48rem); margin: 0 auto; padding: 2rem 0 4rem; }
 .narrow { max-width: 36rem; }
@@ -22,7 +24,7 @@ h1, h2 { line-height: 1.25; }
 .tabs button[aria-selected="true"] { background: #23624b; color: #fff; }
 label, fieldset { display: block; margin: 1rem 0; }
 .identity-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-input, select, button { width: 100%; min-height: 2.75rem; margin-top: .35rem; padding: .65rem .75rem; border: 1px solid #9caaa3; border-radius: .5rem; font: inherit; }
+input, select, textarea, button { width: 100%; min-height: 2.75rem; margin-top: .35rem; padding: .65rem .75rem; border: 1px solid #9caaa3; border-radius: .5rem; font: inherit; }
 button, .button-link { border-color: #23624b; color: #fff; background: #23624b; font-weight: 700; cursor: pointer; }
 button:disabled { opacity: .55; cursor: wait; }
 .secondary { color: #23624b; background: #fff; }
@@ -41,6 +43,19 @@ fieldset { padding: 0; border: 0; }
 .activity-options input { width: auto; min-height: auto; margin: 0; }
 .activity-status { display: inline-block; margin: .4rem 0; padding: .35rem .6rem; border-radius: .4rem; color: #33443d; background: #eef3f0; font-weight: 700; }
 #save-edit:disabled { cursor: not-allowed; }
+.hosting-section { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5ebe8; }
+.hosting-section > legend { float: left; width: 100%; padding: 0; font-weight: 700; }
+.hosting-section > legend + * { clear: left; }
+.hosting-description { white-space: pre-line; }
+.hosting-options, .hosting-guest { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; }
+.hosting-options label, .hosting-guest label { display: flex; align-items: center; gap: .35rem; margin: .4rem 0; }
+.hosting-options input, .hosting-guest input { width: auto; min-height: auto; margin: 0; }
+.hosting-guest { margin: .5rem 0; }
+.hosting-guest legend { width: 100%; margin-bottom: .1rem; }
+.hosting-details { margin: .5rem 0 0; padding: .25rem 0 .25rem 1rem; border-left: 3px solid #cfe0d7; }
+.hosting-details > label { margin: .75rem 0; }
+.hosting-details input[type="number"] { max-width: 10rem; display: block; }
+.hosting-note { margin: .25rem 0 0; color: #33443d; white-space: pre-line; overflow-wrap: anywhere; }
 .hint { color: #59655f; font-size: .95rem; }
 .actions { display: grid; gap: .75rem; }
 .honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }

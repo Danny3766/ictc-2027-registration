@@ -8,12 +8,18 @@ const editModeHint = document.querySelector("#edit-mode-hint");
 const startEditButton = document.querySelector("#start-edit");
 const saveEditButton = document.querySelector("#save-edit");
 const cancelEditButton = document.querySelector("#cancel-edit");
+const hostingSection = document.querySelector("#hosting-section");
+const hostingFields = document.querySelector("#hosting-fields");
+const editHostingSection = document.querySelector("#edit-hosting-section");
+const editHosting = document.querySelector("#edit-hosting");
+const hostingClosedMessage = "開家接待調查已關閉，如需調整請聯絡服事者";
 const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
 const startedAt = Date.now();
 let pageData;
 // The name and district of the loaded registration; an update sends them back as its lookup key.
 let activeIdentity = null;
 let queriedChoicesBaseline = null;
+let queriedHostingBaseline = null;
 let queriedCanChange = false;
 let editMode = false;
 
@@ -96,6 +102,8 @@ async function api(body) {
   if (!response.ok) {
     const error = new Error(result.error || "服務暫時無法使用");
     error.status = response.status;
+    error.code = result.code;
+    error.body = result;
     throw error;
   }
   return result;
@@ -202,21 +210,99 @@ function currentEditChoices() {
   }));
 }
 
+const hostingOpen = () => Boolean(pageData?.settings.is_hosting_open);
+
+// Only an open hosting survey is editable by the registrant; otherwise the stored answer stands.
+function currentEditHosting() {
+  return editMode && hostingOpen() ? Hosting.read(editHosting) : queriedHostingBaseline;
+}
+
 function hasUnsavedChanges() {
-  return editMode && queriedChoicesBaseline
-    && JSON.stringify(currentEditChoices()) !== JSON.stringify(queriedChoicesBaseline);
+  return Boolean(editMode && queriedChoicesBaseline
+    && (JSON.stringify(currentEditChoices()) !== JSON.stringify(queriedChoicesBaseline)
+      || JSON.stringify(currentEditHosting()) !== JSON.stringify(queriedHostingBaseline)));
 }
 
 function updateSaveState() {
-  const choices = currentEditChoices();
-  const complete = choices.every((choice) => choice.attending !== null);
-  saveEditButton.disabled = !complete
-    || JSON.stringify(choices) === JSON.stringify(queriedChoicesBaseline);
+  saveEditButton.disabled = !editForm.checkValidity() || !hasUnsavedChanges();
+}
+
+function hostingLine(answer) {
+  return answer?.note ? `${Hosting.summary(answer)}；備註：${answer.note}` : Hosting.summary(answer);
+}
+
+// The hosting description: on the registration form while hosting is open, and in the lookup only
+// while editing, since the confirmation and read-only views cannot answer it.
+function showHostingDescriptions() {
+  const text = hostingOpen() ? pageData.settings.hosting_description ?? "" : "";
+  for (const [element, visible] of [[hostingSection, true], [editHostingSection, editMode]]) {
+    const description = element.querySelector(".hosting-description");
+    description.textContent = text;
+    description.hidden = !(visible && text);
+  }
+}
+
+// Shows the registration form's hosting fields while hosting is open. When closed the fields are
+// removed, not just hidden, so their required radios cannot block the form. Also refreshes both
+// descriptions (see showHostingDescriptions).
+function showRegistrationHosting() {
+  showHostingDescriptions();
+  hostingSection.hidden = !hostingOpen();
+  if (!hostingOpen()) {
+    hostingFields.replaceChildren();
+    delete hostingFields.dataset.hosting;
+    return;
+  }
+  if (hostingFields.dataset.hosting === undefined) Hosting.render(hostingFields);
+}
+
+// The switch changed after this page loaded (HOSTING_CLOSED / HOSTING_REQUIRED from the server).
+// Shows what happened; unsaved activity edits stay as they are.
+// HOSTING_REQUIRED carries the current description, which the admin may have written meanwhile.
+function applyHostingChange(error) {
+  pageData.settings.is_hosting_open = error.code === "HOSTING_REQUIRED";
+  if (error.body?.hosting_description !== undefined) pageData.settings.hosting_description = error.body.hosting_description;
+  showRegistrationHosting();
+  if (editMode) {
+    if (hostingOpen()) {
+      editHostingSection.hidden = false;
+      // Fields already on screen keep what the person typed.
+      if (editHosting.dataset.hosting === undefined) Hosting.render(editHosting, queriedHostingBaseline);
+    } else {
+      showHostingSummary();
+      // Only the hosting answer had changed: nothing is left to save.
+      if (!hasUnsavedChanges()) {
+        showConfirmation();
+        // Nothing was lost and the page is back to a normal confirmation, so this is not an error.
+        return showMessage("開家接待調查已關閉，接待內容維持原樣。");
+      }
+    }
+  } else if (queriedChoicesBaseline) {
+    // A lookup shown in the other tab keeps its hosting summary and hint in step with the switch.
+    showHostingSummary();
+  }
+  const button = editMode ? "「儲存修改」" : "「送出登記」";
+  if (hostingOpen()) return showMessage(`開家接待調查已開放，請回答開家接待後再按${button}。`, true);
+  // A new registration had nothing stored, so its answer is dropped, not kept.
+  return showMessage(editMode ? "開家接待調查已關閉，接待內容維持原樣，請再按一次「儲存修改」。"
+    : "開家接待調查已關閉，接待回答不會送出；請再按一次「送出登記」。", true);
+}
+
+// While hosting is closed an existing answer stays visible but read-only; without one the section stays hidden.
+function showHostingSummary() {
+  const answer = queriedHostingBaseline;
+  editHostingSection.hidden = !hostingOpen() && !answer;
+  delete editHosting.dataset.hosting;
+  editHosting.innerHTML = `<p class="activity-status">登記狀態：${escapeHtml(Hosting.summary(answer))}</p>
+    ${answer?.note ? `<p class="hosting-note">備註：${escapeHtml(answer.note)}</p>` : ""}
+    ${hostingOpen() ? "" : `<p class="hint">${hostingClosedMessage}</p>`}`;
 }
 
 function showConfirmation() {
   editMode = false;
   editActivities.innerHTML = activitySummaryFields(pageData.activities, choicesMap(queriedChoicesBaseline ?? []));
+  showHostingSummary();
+  showHostingDescriptions();
   editModeHint.hidden = true;
   startEditButton.hidden = !queriedCanChange;
   startEditButton.disabled = false;
@@ -228,6 +314,8 @@ function beginEditing() {
   if (!queriedCanChange || !queriedChoicesBaseline) return;
   editMode = true;
   editActivities.innerHTML = activityFields(pageData.activities, choicesMap(queriedChoicesBaseline));
+  if (hostingOpen()) Hosting.render(editHosting, queriedHostingBaseline);
+  showHostingDescriptions();
   editModeHint.hidden = false;
   startEditButton.hidden = true;
   saveEditButton.hidden = false;
@@ -253,6 +341,7 @@ async function loadPage() {
     registrationForm.elements.district_id.innerHTML = districtOptions(pageData.districts);
     queryForm.elements.district_id.innerHTML = districtOptions(pageData.districts);
     document.querySelector("#activities").innerHTML = activityFields(pageData.activities);
+    showRegistrationHosting();
     if (!pageData.settings.is_registration_open || pageData.activities.length === 0) {
       registrationForm.querySelector("button[type=submit]").disabled = true;
       showMessage("登記目前尚未開放。", true);
@@ -270,6 +359,7 @@ registrationForm.addEventListener("submit", async (event) => {
   try {
     const data = new FormData(registrationForm);
     const choices = choicesFrom(registrationForm);
+    const hosting = hostingOpen() ? Hosting.read(hostingFields) : undefined;
     await api({
       action: "create",
       create_request_id: crypto.randomUUID(),
@@ -278,6 +368,7 @@ registrationForm.addEventListener("submit", async (event) => {
       full_name: data.get("full_name"),
       district_id: Number(data.get("district_id")),
       choices,
+      hosting,
       turnstile_token: null,
     });
     // The success page shows what was sent, so the person can check it before leaving.
@@ -288,9 +379,11 @@ registrationForm.addEventListener("submit", async (event) => {
         title: pageData.activities.find((activity) => activity.id === choice.activity_id)?.title ?? "",
         attending: choice.attending,
       })),
+      hosting: hosting ? hostingLine(hosting) : null,
     }));
     location.assign("./success.html");
   } catch (error) {
+    if (["HOSTING_CLOSED", "HOSTING_REQUIRED"].includes(error.code)) return applyHostingChange(error);
     showMessage(error.message, true);
   } finally {
     setBusy(registrationForm, false);
@@ -304,6 +397,7 @@ queryForm.addEventListener("submit", async (event) => {
   editForm.hidden = true;
   activeIdentity = null;
   queriedChoicesBaseline = null;
+  queriedHostingBaseline = null;
   queriedCanChange = false;
   editMode = false;
   try {
@@ -313,12 +407,13 @@ queryForm.addEventListener("submit", async (event) => {
     document.querySelector("#edit-identity").textContent = `${registration.full_name}｜${districtName(registration.district_id)}`;
     activeIdentity = identity;
     queriedChoicesBaseline = sortedChoices(registration.choices);
+    queriedHostingBaseline = Hosting.normalize(registration.hosting);
     queriedCanChange = registration.can_change;
     editForm.hidden = false;
     showConfirmation();
     showMessage(registration.can_change
       ? "以下為目前登記內容。"
-      : "目前只能查看，無法修改活動選擇。");
+      : "目前只能查看，無法修改登記內容。");
   } catch (error) {
     editForm.hidden = true;
     showMessage(error.message, true);
@@ -336,14 +431,17 @@ editForm.addEventListener("submit", async (event) => {
   if (!editMode) return;
   const choices = currentEditChoices();
   if (choices.some((choice) => choice.attending === null)) return showMessage("請回答每一項活動", true);
-  if (!hasUnsavedChanges()) return;
+  if (!editForm.reportValidity() || !hasUnsavedChanges()) return;
+  const hosting = currentEditHosting();
   setBusy(editForm, true);
   try {
-    await api({ action: "update", ...activeIdentity, choices });
+    await api({ action: "update", ...activeIdentity, choices, ...(hostingOpen() ? { hosting } : {}) });
     queriedChoicesBaseline = choices;
+    queriedHostingBaseline = hosting;
     showConfirmation();
     showMessage("修改已儲存，以下為目前登記內容。");
   } catch (error) {
+    if (["HOSTING_CLOSED", "HOSTING_REQUIRED"].includes(error.code)) return applyHostingChange(error);
     if (error.status === 409 || error.message === "查詢功能暫停中，請稍後再試") {
       queriedCanChange = false;
       showConfirmation();
@@ -356,7 +454,7 @@ editForm.addEventListener("submit", async (event) => {
 });
 
 startEditButton.addEventListener("click", beginEditing);
-editActivities.addEventListener("change", () => { if (editMode) updateSaveState(); });
+editForm.addEventListener("input", () => { if (editMode) updateSaveState(); });
 cancelEditButton.addEventListener("click", () => {
   if (hasUnsavedChanges() && !confirm("確定放棄尚未儲存的修改？")) return;
   showConfirmation();
