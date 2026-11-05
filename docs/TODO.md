@@ -264,6 +264,15 @@ Q43 已確認。
 - [ ] 測試站依序：套用 `202611050005`，再部署 `staff` Edge Function，最後部署前端（staff 函式會讀 `pickup_count`，前端會送出它，都不能早於 migration）；確認既有回答的接機人數為 0。
 - [ ] 驗收公開頁與後台：每種回答都能填接機、預設 0、摘要顯示、已匯入登記改接機後需重新匯入、統計與 CSV「可接機人數」。
 
+## 本次新增必要範圍：用餐學生價與報名對象
+
+- [x] 本機完成：`202611050006_meal_pricing_and_audience.sql`、兩個 Edge Function、公開頁身分題與限定活動、後台活動欄位、統計與 CSV；`supabase/testing/verify-meal-pricing-and-audience.sql`、Edge Function 單元測試與四種瀏覽器的 Playwright 測試通過。
+- [ ] 測試站依序：套用 `202611050006`，再部署 `registration` 與 `staff` Edge Function，最後部署前端（舊版 Edge Function 仍可呼叫新 RPC，但讀不到新欄位）；套用後在測試站 SQL Editor 執行 `supabase/testing/verify-meal-pricing-and-audience.sql`。
+- [ ] 部署後由管理員在後台設定三餐的一般價、學生價、實際成本，以及 2/20 午餐的報名對象；實際成本不寫入版控文件。
+- [ ] 驗收公開頁：學生價顯示、勾選有學生價的用餐才出現身分題且必填、限定活動依開家接待回答開放或退回、完成頁與查詢頁顯示身分。
+- [ ] 驗收後台：活動新欄位儲存、改為限定時的確認人數、統計的學生人數／成本／補貼、CSV 兩個新欄位；以 `anon` 直接讀取 `activities.cost_amount` 必須被拒。
+- [ ] 日後確認大會系統欄位後，評估用餐身分是否要改為「變更即需重新匯入」。
+
 ## 可延後項目
 
 - Cloudflare Turnstile：後續以公開設定提供 site key、伺服端 secret 驗證 token，使用新 migration 調整防護；測試與正式環境分開設定。未完成前不讓公開流程依賴 Turnstile。

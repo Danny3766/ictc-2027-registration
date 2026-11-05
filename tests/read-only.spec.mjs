@@ -747,3 +747,211 @@ test("changing only pickup on an unanswered registration still asks before disca
   expect(asked).toBe(true);
   await expect(pickup).toHaveValue("2");
 });
+
+const mealPage = (activities, settings = {}) => ({ ...openPage(), settings: { ...openPage().settings, ...settings }, activities });
+const studentDinner = { id: 2, title: "測試晚餐", category: "meal", fee_amount: 100, student_fee_amount: 60, audience: "all" };
+const restrictedLunch = { id: 1, title: "測試午餐", category: "meal", fee_amount: 120, student_fee_amount: 70, audience: "hosting", audience_note: null };
+
+test("a student-priced meal asks for the identity, required, and the success page shows it", async ({ page }) => {
+  let submitted;
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({ json: mealPage([
+        { id: 1, title: "測試聚會", category: "meeting", audience: "all" },
+        studentDinner,
+        { id: 3, title: "測試第三餐", category: "meal", fee_amount: 90, student_fee_amount: null, audience: "all" },
+      ]) });
+    }
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { success: true } });
+  });
+  await page.goto("/");
+  await expect(page.locator('[data-activity="2"]')).toContainText("規劃費用：一般 NT$100／人，學生 NT$60／人");
+  await expect(page.locator('[data-activity="3"]')).toContainText("規劃費用：NT$90／人");
+  const identity = page.locator("#activities .meal-identity");
+  await expect(identity).toBeHidden();
+  await page.locator('#registration-form input[name="full_name"]').fill("學生測試");
+  await page.locator('#registration-form select[name="district_id"]').selectOption("1");
+  await page.locator('#registration-form input[name="activity_1"][value="true"]').check();
+  // A meal without a student price does not ask.
+  await page.locator('#registration-form input[name="activity_3"][value="true"]').check();
+  await expect(identity).toBeHidden();
+  await page.locator('#registration-form input[name="activity_2"][value="true"]').check();
+  await expect(identity).toBeVisible();
+  await expect(identity).toContainText("勾選的用餐有學生價，請選擇身分。");
+  // It is the last part of the activity choices.
+  expect(await page.locator("#activities > *").last().evaluate((element) => element.classList.contains("meal-identity"))).toBe(true);
+  await page.getByRole("button", { name: "送出登記" }).click();
+  expect(await registrationFormValid(page)).toBe(false);
+  expect(submitted).toBeUndefined();
+
+  await identity.getByLabel("學生").check();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page).toHaveURL(/success\.html$/);
+  expect(submitted.meal_identity).toBe("student");
+  await expect(page.locator("#summary-choices li").last()).toHaveText("用餐身分：學生");
+});
+
+test("unticking the student-priced meal hides the identity question and sends no identity", async ({ page }) => {
+  let submitted;
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: mealPage([studentDinner]) });
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { success: true } });
+  });
+  await page.goto("/");
+  await page.locator('#registration-form input[name="full_name"]').fill("一般測試");
+  await page.locator('#registration-form select[name="district_id"]').selectOption("1");
+  await page.locator('#registration-form input[name="activity_2"][value="true"]').check();
+  await page.locator("#activities .meal-identity").getByLabel("一般").check();
+  await page.locator('#registration-form input[name="activity_2"][value="false"]').check();
+  await expect(page.locator("#activities .meal-identity")).toBeHidden();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page).toHaveURL(/success\.html$/);
+  expect(submitted).not.toHaveProperty("meal_identity");
+  await expect(page.locator("#summary-choices")).not.toContainText("用餐身分");
+});
+
+test("a restricted activity opens and closes with the hosting answer on screen", async ({ page }) => {
+  let submitted;
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({ json: mealPage([restrictedLunch, studentDinner], { is_hosting_open: true }) });
+    }
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { success: true } });
+  });
+  await page.goto("/");
+  const lunch = page.locator('#activities [data-activity="1"]');
+  const yes = lunch.locator('input[value="true"]');
+  const no = lunch.locator('input[value="false"]');
+  const reverted = lunch.locator(".audience-reverted");
+  const hosting = page.locator("#hosting-section");
+  await expect(lunch).toContainText("本項優先開放有開家接待的聖徒報名");
+  // No hosting answer yet: the activity shows, locked to 不參加, with nothing to answer.
+  await expect(no).toBeChecked();
+  await expect(yes).toBeDisabled();
+  await expect(reverted).toBeHidden();
+  await hosting.getByLabel("否", { exact: true }).check();
+  await expect(yes).toBeDisabled();
+  await hosting.getByLabel("家人已登記開家接待").check();
+  await expect(yes).toBeEnabled();
+  await yes.check();
+  await expect(page.locator("#activities .meal-identity")).toBeVisible();
+
+  await hosting.getByLabel("否", { exact: true }).check();
+  await expect(no).toBeChecked();
+  await expect(yes).toBeDisabled();
+  await expect(reverted).toHaveText("不符報名對象，已改為不參加。");
+  await expect(page.locator("#activities .meal-identity")).toBeHidden();
+  // Becoming eligible again on the same screen brings the 參加 back.
+  await hosting.getByLabel("是", { exact: true }).check();
+  await expect(yes).toBeChecked();
+  await expect(reverted).toBeHidden();
+
+  await hosting.getByLabel("否", { exact: true }).check();
+  await page.locator('#registration-form input[name="full_name"]').fill("限定測試");
+  await page.locator('#registration-form select[name="district_id"]').selectOption("1");
+  await page.locator('#registration-form input[name="activity_2"][value="false"]').check();
+  await page.getByRole("button", { name: "送出登記" }).click();
+  await expect(page).toHaveURL(/success\.html$/);
+  // The locked choice is still sent, as 不參加.
+  expect(submitted.choices).toEqual([{ activity_id: 1, attending: false }, { activity_id: 2, attending: false }]);
+});
+
+test("a sign-up from before a restriction is kept until the person saves another change", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({ json: mealPage([{ ...restrictedLunch, audience_note: "限有開家接待的家庭" }, studentDinner]) });
+    }
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.action === "query") {
+      return route.fulfill({ json: { ...queried(true), hosting: null, meal_identity: "student", choices: [
+        { activity_id: 1, title: "測試午餐", attending: true }, { activity_id: 2, title: "測試晚餐", attending: true },
+      ] } });
+    }
+    return route.fulfill({ json: { success: true } });
+  });
+  await page.goto("/");
+  await query(page);
+  await expect(page.locator("#edit-activities")).toContainText("用餐身分");
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：學生");
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  const lunch = page.locator('#edit-activities [data-activity="1"]');
+  await expect(lunch).toContainText("限有開家接待的家庭");
+  await expect(lunch.locator('input[value="false"]')).toBeChecked();
+  await expect(lunch.locator('input[value="true"]')).toBeDisabled();
+  await expect(lunch.locator(".audience-reverted")).toBeVisible();
+  await expect(page.locator("#edit-activities .meal-identity").getByLabel("學生")).toBeChecked();
+  // Opening the form changed nothing the person did, so there is nothing to save or confirm.
+  const save = page.getByRole("button", { name: "儲存修改" });
+  await expect(save).toBeDisabled();
+  let asked = false;
+  page.once("dialog", (dialog) => { asked = true; return dialog.dismiss(); });
+  await page.getByRole("button", { name: "取消修改" }).click();
+  expect(asked).toBe(false);
+  await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  await page.locator("#edit-activities .meal-identity").getByLabel("一般").check();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page.locator("#page-message")).toHaveText("修改已儲存，以下為目前登記內容。");
+  expect(requests[1]).toEqual({
+    action: "update", full_name: "測試登記", district_id: 1, meal_identity: "general",
+    choices: [{ activity_id: 1, attending: false }, { activity_id: 2, attending: true }],
+  });
+  await expect(page.locator("#edit-activities")).toContainText("登記狀態：一般");
+});
+
+test("an identity left from a removed student price is neither shown nor sent", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: mealPage([{ ...studentDinner, student_fee_amount: null }]) });
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.action === "query") {
+      return route.fulfill({ json: { ...queried(true), meal_identity: "student",
+        choices: [{ activity_id: 2, title: "測試晚餐", attending: true }] } });
+    }
+    return route.fulfill({ json: { success: true } });
+  });
+  await page.goto("/");
+  await query(page);
+  await expect(page.locator("#edit-activities")).not.toContainText("用餐身分");
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  const save = page.getByRole("button", { name: "儲存修改" });
+  await expect(save).toBeDisabled();
+  await page.locator('#edit-form input[name="activity_2"][value="false"]').check();
+  await save.click();
+  await expect(page.locator("#page-message")).toHaveText("修改已儲存，以下為目前登記內容。");
+  expect(requests[1]).not.toHaveProperty("meal_identity");
+});
+
+// The page may be older than an admin's price or audience change; the server's 400 keeps the edit open.
+for (const [refusal, error] of [
+  ["meal identity", "請選擇用餐身分；看不到這一題時請重新整理頁面"],
+  ["audience", "有活動限有開家接待的聖徒報名，請確認開家接待的回答；畫面不符時請重新整理頁面"],
+]) {
+  test(`a refused ${refusal} keeps the edit open with the server message`, async ({ page }) => {
+    await page.route("**/functions/v1/registration", async (route) => {
+      if (route.request().method() === "GET") return route.fulfill({ json: mealPage([studentDinner]) });
+      const body = route.request().postDataJSON();
+      if (body.action === "query") {
+        return route.fulfill({ json: { ...queried(true), choices: [{ activity_id: 2, title: "測試晚餐", attending: false }] } });
+      }
+      return route.fulfill({ status: 400, json: { error } });
+    });
+    await page.goto("/");
+    await query(page);
+    await page.getByRole("button", { name: "修改登記內容" }).click();
+    await page.locator('#edit-form input[name="activity_2"][value="true"]').check();
+    await page.locator("#edit-activities .meal-identity").getByLabel("學生").check();
+    await page.getByRole("button", { name: "儲存修改" }).click();
+    await expect(page.locator("#page-message")).toHaveText(error);
+    await expect(page.locator('#edit-form input[name="activity_2"][value="true"]')).toBeChecked();
+    await expect(page.getByRole("button", { name: "儲存修改" })).toBeVisible();
+  });
+}

@@ -26,7 +26,25 @@ async function hostingRequiredResponse(database) {
   }
   return response(hostingRequired, 409);
 }
+// A page loaded before an admin changed prices or audiences can miss the question or show an
+// activity as open; reloading shows the current form. These stay 400: the lookup page treats a 409
+// on update as "this registration can no longer be changed" and leaves the edit form.
+function mealResponse(error) {
+  if (error?.message?.includes("MEAL_IDENTITY_REQUIRED")) {
+    return response({ error: "請選擇用餐身分；看不到這一題時請重新整理頁面" }, 400);
+  }
+  if (error?.message?.includes("INVALID_MEAL_IDENTITY")) return response({ error: "請檢查用餐身分" }, 400);
+  if (error?.message?.includes("AUDIENCE_RESTRICTED")) {
+    return response({ error: "有活動限有開家接待的聖徒報名，請確認開家接待的回答；畫面不符時請重新整理頁面" }, 400);
+  }
+  return null;
+}
 let createClient;
+
+// Left out (or null) means no answer; anything else must be one of the two codes.
+export function validMealIdentity(value) {
+  return value === undefined || value === null || value === "general" || value === "student";
+}
 
 export function isUuid(value) {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -91,7 +109,7 @@ export async function handler(request) {
     const [settings, districts, activities, program] = await Promise.all([
       database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_hosting_open,hosting_description").single(),
       database.from("districts").select("id,name").order("sort_order"),
-      database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount").eq("is_published", true).order("sort_order"),
+      database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,student_fee_amount,audience,audience_note").eq("is_published", true).order("sort_order"),
       database.from("program_items").select("event_date,start_time,end_time,title,note").eq("is_visible", true).order("sort_order"),
     ]);
     const failed = [settings, districts, activities, program].find((result) => result.error);
@@ -131,6 +149,7 @@ export async function handler(request) {
     return response({ error: "服務暫時無法使用" }, 503);
   }
   if (allowed !== true) return response({ error: "操作次數過多，請稍後再試" }, 429);
+  if (!validMealIdentity(body.meal_identity)) return response({ error: "請檢查用餐身分" }, 400);
 
   if (action === "create") {
     // shortcut: Turnstile stays disabled for launch; verify body.turnstile_token here when enabled.
@@ -145,8 +164,11 @@ export async function handler(request) {
       p_district_id: body.district_id,
       p_choices: body.choices,
       p_hosting: body.hosting ?? null,
+      p_meal_identity: body.meal_identity ?? null,
     });
     if (!error) return response({ success: true }, 201);
+    const mealError = mealResponse(error);
+    if (mealError) return mealError;
     if (error.message.includes("NAME_TAKEN")) {
       return response({ error: "此姓名與區已經登記過，如需查看或修改，請使用「查詢或修改登記」" }, 409);
     }
@@ -189,7 +211,10 @@ export async function handler(request) {
     p_district_id: districtId,
     p_choices: body.choices,
     p_hosting: body.hosting ?? null,
+    p_meal_identity: body.meal_identity ?? null,
   });
+  const mealError = mealResponse(error);
+  if (mealError) return mealError;
   if (error?.message.includes("REGISTRATION_CLOSED")) return response({ error: "登記已截止，資料只能查看" }, 409);
   if (error?.message.includes("LOOKUP_CLOSED")) return response({ error: lookupClosedMessage }, 503);
   if (error?.message.includes("HOSTING_CLOSED")) return response(hostingClosed, 409);

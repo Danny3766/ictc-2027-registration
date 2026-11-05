@@ -706,18 +706,18 @@ test("statistics count hosting answers and capacity", async ({ page }) => {
   await expect(page.locator("#hosting-pickup-stats-rows tr td")).toHaveText(["可配搭接機", "2", "3"]);
 });
 
-test("CSV adds the hosting columns", async ({ page }, testInfo) => {
+test("CSV adds the hosting and meal columns", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-chromium");
   await mockStaff(page, "staff", () => {}, "測試登記", hostedRegistrations);
   await login(page);
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "下載 CSV" }).click();
   const lines = (await readFile(await (await download).path(), "utf8")).split("\r\n");
-  expect(lines[0]).toMatch(/"開家接待","接待對象","可接待人數","可接機人數"$/);
-  expect(lines[1]).toMatch(/"是","弟兄","2","1"$/);
-  expect(lines[2]).toMatch(/"是","夫婦","4","0"$/);
-  expect(lines[3]).toMatch(/"家人已登記開家接待","","","2"$/);
-  expect(lines[4]).toMatch(/"未回覆","","",""$/);
+  expect(lines[0]).toMatch(/"開家接待","接待對象","可接待人數","可接機人數","用餐身分","預估應付餐費"$/);
+  expect(lines[1]).toMatch(/"是","弟兄","2","1","","0"$/);
+  expect(lines[2]).toMatch(/"是","夫婦","4","0","","0"$/);
+  expect(lines[3]).toMatch(/"家人已登記開家接待","","","2","","0"$/);
+  expect(lines[4]).toMatch(/"未回覆","","","","","0"$/);
 });
 
 test("admins save the hosting switch and description from their own card", async ({ page }) => {
@@ -844,4 +844,197 @@ test("a password set for another admin must be changed at their next login", asy
   await form.locator('input[name="password"]').fill("new-admin-password-1");
   await form.getByRole("button", { name: "設定密碼" }).click();
   await expect(page.locator("#message")).toHaveText("密碼已設定。對方是管理員，下次登入時須改成自己的密碼；請以安全方式私下交付。");
+});
+
+const mealRegistration = (serial, name, choices, hosting, mealIdentity = null) => ({
+  id: `223e4567-e89b-42d3-a456-42661417010${serial}`, serial_no: serial, full_name: name, district_id: 1,
+  record_status: "active", import_status: "pending", updated_at: "2026-11-05T00:00:00Z", meal_identity: mealIdentity,
+  registration_choices: Object.entries(choices).map(([id, attending]) => ({ activity_id: Number(id), attending })),
+  registration_hosting: hosting ? { status: hosting, guest_type: hosting === "hosting" ? "any" : null,
+    guest_count: hosting === "hosting" ? 2 : null, pickup_count: 0 } : null,
+});
+const mealActivities = [
+  { id: 1, title: "測試限定午餐", category: "meal", is_published: true, sort_order: 1, fee_amount: 120, student_fee_amount: 70,
+    cost_amount: 150, audience: "hosting", audience_note: null },
+  { id: 2, title: "測試晚餐", category: "meal", is_published: true, sort_order: 2, fee_amount: 100, student_fee_amount: 60,
+    cost_amount: null, audience: "all", audience_note: null },
+  { id: 3, title: "測試聚會", category: "meeting", is_published: true, sort_order: 3, fee_amount: null, student_fee_amount: null,
+    cost_amount: null, audience: "all", audience_note: null },
+];
+// 甲 hosts and is a student; 乙 signed up for the restricted lunch before it was restricted and never
+// answered the identity; 丙 only has the open dinner; 丁 keeps an identity from a removed student price.
+const mealReplies = (registrations = [
+  mealRegistration(4, "甲", { 1: true, 2: true, 3: false }, "hosting", "student"),
+  mealRegistration(3, "乙", { 1: true, 2: true, 3: false }, null),
+  mealRegistration(2, "丙", { 1: false, 2: true, 3: false }, "not_hosting", "general"),
+  mealRegistration(1, "丁", { 1: false, 2: false, 3: true }, "not_hosting", "student"),
+], settings = {}) => ({
+  list_reference: () => ({ json: {
+    settings: { event_name: "測試", is_registration_open: true, ...settings },
+    districts: [{ id: 1, name: "林森", sort_order: 1 }], activities: mealActivities, program: [],
+  } }),
+  list_registrations: () => ({ json: { count: registrations.length, registrations } }),
+});
+
+test("statistics estimate fees by identity, with cost, subsidy and the sign-ups outside an audience", async ({ page }) => {
+  await mockStaff(page, "staff", () => {}, "測試登記", mealReplies());
+  await login(page);
+  await page.getByRole("button", { name: "更新統計" }).click();
+  const rows = page.locator("#stats-rows tr");
+  // Fictional amounts. 午餐: 甲 student 70 + 乙 general 120; cost 2 × 150.
+  await expect(rows.nth(0).locator("td")).toHaveText(["測試限定午餐", "2", "1", "2", "0", "NT$190", "NT$300", "NT$110"]);
+  await expect(rows.nth(1).locator("td")).toHaveText(["測試晚餐", "3", "1", "1", "0", "NT$260", "—", "—"]);
+  await expect(rows.nth(2).locator("td")).toHaveText(["測試聚會", "1", "—", "3", "0", "NT$0", "—", "—"]);
+  // The free meeting needs no cost; only the charged dinner without one is named.
+  await expect(page.locator("#stats-summary")).toHaveText("有效登記 4 筆；預估費用 NT$450；預估成本 NT$300；"
+    + "預估補貼 NT$110（測試晚餐尚未設定實際成本，未計入）。用餐身分未回覆 1 人，先以一般價計算。"
+    + "不符報名對象（限定前已報名）：測試限定午餐 1 人。");
+  await expect(page.locator("#district-stats-rows tr td")).toHaveText(["林森", "4", "NT$450"]);
+});
+
+test("statistics name no activity once every charged one has a cost", async ({ page }) => {
+  const replies = mealReplies();
+  await mockStaff(page, "staff", () => {}, "測試登記", { ...replies, list_reference: () => {
+    const result = replies.list_reference();
+    result.json.activities = result.json.activities.map((item) => item.id === 2 ? { ...item, cost_amount: 130 } : item);
+    return result;
+  } });
+  await login(page);
+  await page.getByRole("button", { name: "更新統計" }).click();
+  // Dinner cost 3 × 130 = 390, subsidy 390 − 260 = 130; the meeting has no fee, so it is not named.
+  await expect(page.locator("#stats-summary")).toContainText("預估成本 NT$690；預估補貼 NT$240。");
+});
+
+test("statistics show no cost or subsidy until a cost is set", async ({ page }) => {
+  await mockStaff(page, "staff", () => {}, "測試登記", twoActivities);
+  await login(page);
+  await page.getByRole("button", { name: "更新統計" }).click();
+  await expect(page.locator("#stats-summary")).toHaveText("有效登記 1 筆；預估費用 NT$0；預估成本 —；預估補貼 —（尚未設定實際成本）。");
+});
+
+test("CSV shows the meal identity only where it is needed, and the fee by identity", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+  await mockStaff(page, "staff", () => {}, "測試登記", mealReplies());
+  await login(page);
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下載 CSV" }).click();
+  const lines = (await readFile(await (await download).path(), "utf8")).split("\r\n");
+  expect(lines[1]).toMatch(/^"4","甲",.*,"學生","130"$/);
+  expect(lines[2]).toMatch(/^"3","乙",.*,"未回覆","220"$/);
+  expect(lines[3]).toMatch(/^"2","丙",.*,"一般","100"$/);
+  // 丁's stored identity is left from a removed student price, so it is not needed and stays blank.
+  expect(lines[4]).toMatch(/^"1","丁",.*,"","0"$/);
+});
+
+test("the activity form saves prices, cost and audience, and confirms restricting one with outside sign-ups", async ({ page }) => {
+  const saved = [];
+  const replies = mealReplies();
+  const open = { ...replies, list_reference: () => {
+    const result = replies.list_reference();
+    result.json.activities = result.json.activities.map((item) => item.id === 1 ? { ...item, audience: "all" } : item);
+    return result;
+  } };
+  await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); }, "測試登記", open);
+  await login(page);
+  const form = page.locator("#activity-form");
+  await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).first().click();
+  await expect(form.locator('input[name="fee_amount"]')).toHaveValue("120");
+  await expect(form.locator('input[name="student_fee_amount"]')).toHaveValue("70");
+  await expect(form.locator('input[name="cost_amount"]')).toHaveValue("150");
+  await expect(form.locator('select[name="audience"]')).toHaveValue("all");
+  await form.locator('select[name="audience"]').selectOption("hosting");
+  await form.locator('input[name="audience_note"]').fill("限有開家接待的家庭");
+
+  // 乙 signed up and has no hosting answer, so restricting the lunch leaves one sign-up outside it.
+  const asked = [];
+  page.once("dialog", (dialog) => { asked.push(dialog.message()); return dialog.dismiss(); });
+  await form.getByRole("button", { name: /^儲存活動/ }).click();
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toContain("目前有 1 位不符對象的人已報名此活動，他們的報名會保留。");
+  expect(saved).toHaveLength(0);
+  page.once("dialog", (dialog) => dialog.accept());
+  await form.getByRole("button", { name: /^儲存活動/ }).click();
+  await expect(page.locator("#message")).toHaveText("設定已儲存。");
+  expect(saved[0]).toMatchObject({ id: "1", fee_amount: "120", student_fee_amount: "70", cost_amount: "150",
+    audience: "hosting", audience_note: "限有開家接待的家庭" });
+
+  // A student price needs the general one.
+  await form.locator('input[name="title"]').fill("新的餐");
+  await form.locator('input[name="student_fee_amount"]').fill("60");
+  await form.getByRole("button", { name: "儲存活動" }).click();
+  await expect(page.locator("#message")).toHaveText("設定學生每人費用前，請先填寫一般每人費用。");
+  expect(saved).toHaveLength(1);
+});
+
+test("staff saving a sign-up from before a restriction confirm that it becomes 不參加", async ({ page }) => {
+  let saved;
+  await mockStaff(page, "staff", (payload) => { if (payload.action === "save_registration") saved = payload; }, "測試登記",
+    mealReplies([mealRegistration(3, "乙", { 1: true, 2: false, 3: false }, null, "general")]));
+  await login(page);
+  await page.getByRole("button", { name: "查看／處理" }).click();
+  const lunch = page.locator('#detail-choices [data-activity="1"]');
+  await expect(lunch.locator('input[value="false"]')).toBeChecked();
+  await expect(lunch.locator('input[value="true"]')).toBeDisabled();
+  await expect(lunch.locator(".audience-reverted")).toHaveText("不符報名對象，已改為不參加。");
+  // The lunch was the only student-priced meal, so the question is gone.
+  await expect(page.locator("#detail-choices .meal-identity")).toBeHidden();
+  await page.locator('#edit-registration-form input[name="full_name"]').fill("乙更正");
+
+  const asked = [];
+  page.once("dialog", (dialog) => { asked.push(dialog.message()); return dialog.dismiss(); });
+  await page.getByRole("button", { name: "儲存登記" }).click();
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toBe("這筆登記有 1 項限定活動不符報名對象，儲存後會改為不參加。確定儲存？");
+  expect(saved).toBeUndefined();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "儲存登記" }).click();
+  await expect(page.locator("#message")).toHaveText("登記資料已儲存。");
+  expect(saved.choices).toEqual([{ activity_id: 1, attending: false }, { activity_id: 2, attending: false }, { activity_id: 3, attending: false }]);
+  expect(saved.meal_identity).toBeNull();
+});
+
+test("an unanswered restricted activity stays 未回覆 when staff save an older registration", async ({ page }) => {
+  let saved;
+  await mockStaff(page, "staff", (payload) => { if (payload.action === "save_registration") saved = payload; }, "測試登記",
+    mealReplies([mealRegistration(3, "乙", { 2: false, 3: false }, null)]));
+  const dialogs = [];
+  page.on("dialog", (dialog) => { dialogs.push(dialog.message()); return dialog.dismiss(); });
+  await login(page);
+  await page.getByRole("button", { name: "查看／處理" }).click();
+  const lunch = page.locator('#detail-choices [data-activity="1"]');
+  await expect(lunch).toContainText("（未回覆，可留空）");
+  await expect(lunch.locator("input:checked")).toHaveCount(0);
+  await expect(lunch.locator('input[value="true"]')).toBeDisabled();
+  await page.getByRole("button", { name: "儲存登記" }).click();
+  await expect(page.locator("#message")).toHaveText("登記資料已儲存。");
+  // Nothing about the lunch is sent, so the save changes no answer, and there was nothing to confirm.
+  expect(saved.choices).toEqual([{ activity_id: 2, attending: false }, { activity_id: 3, attending: false }]);
+  expect(dialogs).toEqual([]);
+});
+
+test("補登 follows the audience and asks the identity for a student-priced meal", async ({ page }) => {
+  let created;
+  await mockStaff(page, "staff", () => {}, "測試登記", { ...mealReplies(), create_registration: (payload) => {
+    created = payload;
+    return { status: 201, json: { serial_no: 5 } };
+  } });
+  await login(page);
+  const form = page.locator("#new-registration-form");
+  const lunch = form.locator('[data-activity="1"]');
+  await expect(lunch.locator('input[value="true"]')).toBeDisabled();
+  await page.locator("#new-registration-hosting").getByLabel("家人已登記開家接待").check();
+  await expect(lunch.locator('input[value="true"]')).toBeEnabled();
+  await form.locator('input[name="full_name"]').fill("補登學生");
+  await form.locator('select[name="district_id"]').selectOption("1");
+  await lunch.locator('input[value="true"]').check();
+  await form.locator('input[name="activity_2"][value="false"]').check();
+  await form.locator('input[name="activity_3"][value="false"]').check();
+  await form.getByRole("button", { name: "建立補登" }).click();
+  // The identity question is required now.
+  expect(created).toBeUndefined();
+  await form.locator(".meal-identity").getByLabel("學生").check();
+  await form.getByRole("button", { name: "建立補登" }).click();
+  await expect(page.locator("#new-registration-code")).toContainText("已建立流水號 5");
+  expect(created.meal_identity).toBe("student");
+  expect(created.choices).toEqual([{ activity_id: 1, attending: true }, { activity_id: 2, attending: false }, { activity_id: 3, attending: false }]);
 });

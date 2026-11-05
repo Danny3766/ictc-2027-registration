@@ -33,6 +33,18 @@ const label = (group, value) => labels[group][value] ?? value;
 
 // registration_id is the hosting table's primary key, so the API embeds the one row as an object.
 const hostingOf = (registration) => Hosting.normalize(registration.registration_hosting);
+const attends = (registration, activity) =>
+  registration.registration_choices.some((choice) => choice.activity_id === activity.id && choice.attending);
+// What this person pays for the given activities, by their identity (general price until answered).
+const mealFee = (registration, activities) => activities
+  .filter((activity) => attends(registration, activity))
+  .reduce((sum, activity) => sum + Meals.fee(activity, registration.meal_identity), 0);
+// Blank when no attended meal has a student price, even if an identity is still stored from before an
+// admin removed the price; 未回覆 when one is needed but missing.
+const identityText = (registration, activities) => {
+  if (!Meals.needsIdentity(activities, registration.registration_choices)) return "";
+  return registration.meal_identity ? Meals.identityLabels[registration.meal_identity] : "未回覆";
+};
 
 // Short Taiwan time, for example "11/4 08:30".
 function shortTime(value) {
@@ -310,6 +322,9 @@ async function saveReference(event, kind) {
     data.ends_at_has_time = Boolean(data.ends_time);
     data.sort_order = activitySortOrder(form, data.sort_order);
     for (const name of ["starts_on", "starts_time", "ends_on", "ends_time"]) delete data[name];
+    if (data.student_fee_amount !== "" && data.fee_amount === "") {
+      return showMessage("設定學生每人費用前，請先填寫一般每人費用。", true);
+    }
   }
   // An activity save would change the list being reordered; other saves leave the drag order alone.
   if (kind === "activity" && activitySection.classList.contains("reordering")) {
@@ -319,6 +334,16 @@ async function saveReference(event, kind) {
     && !confirm("確定開放登記？請先完成正式環境驗收與核准。")) return;
   if (kind === "hosting" && data.is_hosting_open && !reference.settings.is_hosting_open
     && !confirm("確定開放開家接待調查？公開登記頁與查詢頁將顯示接待區塊。")) return;
+  const edited = kind === "activity" && reference.activities.find((item) => String(item.id) === form.dataset.editingId);
+  if (edited && data.audience === "hosting" && edited.audience !== "hosting") {
+    // People who signed up before the restriction keep their answer until their next save.
+    let outside;
+    try {
+      outside = activeRegistrations(await allRegistrations()).filter((registration) => attends(registration, edited)
+        && !Meals.eligible(data, hostingOf(registration)?.status)).length;
+    } catch (error) { return showMessage(error.message, true); }
+    if (outside && !confirm(`目前有 ${outside} 位不符對象的人已報名此活動，他們的報名會保留。確定改為限定對象？`)) return;
+  }
   try {
     await api("save_reference", { kind, data });
     reference = await api("list_reference");
@@ -388,25 +413,49 @@ function countAnswers(registrations, activity) {
 
 async function showStatistics() {
   const registrations = activeRegistrations(await allRegistrations());
+  const activities = currentActivities();
   const rows = document.querySelector("#stats-rows");
   rows.replaceChildren();
-  let totalFee = 0;
-  for (const activity of currentActivities()) {
+  const total = { fee: 0, cost: 0, subsidy: 0 };
+  const outside = [];
+  for (const activity of activities) {
     const [attending, notAttending, unanswered] = countAnswers(registrations, activity);
-    const fee = attending * (activity.fee_amount ?? 0);
-    totalFee += fee;
+    const attendees = registrations.filter((registration) => attends(registration, activity));
+    const fee = attendees.reduce((sum, registration) => sum + Meals.fee(activity, registration.meal_identity), 0);
+    // The subsidy is what the real cost exceeds the estimated fees by; without a cost there is none to show.
+    const cost = activity.cost_amount == null ? null : attending * activity.cost_amount;
+    total.fee += fee;
+    if (cost !== null) {
+      total.cost += cost;
+      total.subsidy += cost - fee;
+    }
+    const restricted = attendees.filter((registration) => !Meals.eligible(activity, hostingOf(registration)?.status)).length;
+    if (restricted) outside.push(`${activity.title} ${restricted} 人`);
+    const students = Meals.hasStudentPrice(activity)
+      ? attendees.filter((registration) => registration.meal_identity === "student").length : "—";
     const row = document.createElement("tr");
-    for (const value of [activity.title, attending, notAttending, unanswered, `NT$${fee}`]) cell(row, value);
+    for (const value of [activity.title, attending, students, notAttending, unanswered, `NT$${fee}`,
+      cost === null ? "—" : `NT$${cost}`, cost === null ? "—" : `NT$${cost - fee}`]) cell(row, value);
     rows.append(row);
   }
-  document.querySelector("#stats-summary").textContent = `有效登記 ${registrations.length} 筆；預估費用 NT$${totalFee}。`;
+  const noIdentity = registrations.filter((registration) => identityText(registration, activities) === "未回覆").length;
+  // Cost and subsidy cover only the activities with a cost set. A charged activity still without one is
+  // named, so the totals are not read as complete; free activities such as meetings need no cost.
+  const uncosted = activities.filter((activity) => activity.fee_amount != null && activity.cost_amount == null);
+  const costText = activities.every((activity) => activity.cost_amount == null)
+    ? "預估成本 —；預估補貼 —（尚未設定實際成本）"
+    : `預估成本 NT$${total.cost}；預估補貼 NT$${total.subsidy}`
+      + (uncosted.length ? `（${uncosted.map((activity) => activity.title).join("、")}尚未設定實際成本，未計入）` : "");
+  document.querySelector("#stats-summary").textContent = [
+    `有效登記 ${registrations.length} 筆；預估費用 NT$${total.fee}；${costText}。`,
+    noIdentity ? `用餐身分未回覆 ${noIdentity} 人，先以一般價計算。` : "",
+    outside.length ? `不符報名對象（限定前已報名）：${outside.join("、")}。` : "",
+  ].join("");
   const districtRows = document.querySelector("#district-stats-rows");
   districtRows.replaceChildren();
-  const fees = new Map(currentActivities().map((activity) => [activity.id, activity.fee_amount ?? 0]));
   for (const district of reference.districts) {
     const people = registrations.filter((item) => item.district_id === district.id);
-    const fee = people.reduce((sum, person) => sum + person.registration_choices.reduce((personFee, choice) =>
-      personFee + (choice.attending ? fees.get(choice.activity_id) ?? 0 : 0), 0), 0);
+    const fee = people.reduce((sum, person) => sum + mealFee(person, activities), 0);
     const row = document.createElement("tr");
     for (const value of [district.name, people.length, `NT$${fee}`]) cell(row, value);
     districtRows.append(row);
@@ -471,7 +520,7 @@ async function downloadCsv() {
   const activities = currentActivities();
   const districts = new Map(reference.districts.map((item) => [item.id, item.name]));
   const rows = [["流水號", "姓名", "區", "匯入狀態", ...activities.map((item) => item.title),
-    "開家接待", "接待對象", "可接待人數", "可接機人數"]];
+    "開家接待", "接待對象", "可接待人數", "可接機人數", "用餐身分", "預估應付餐費"]];
   for (const registration of activeRegistrations(await allRegistrations())) {
     const choices = new Map(registration.registration_choices.map((item) => [item.activity_id, item.attending]));
     const hosting = hostingOf(registration);
@@ -482,6 +531,7 @@ async function downloadCsv() {
       hosting ? Hosting.statusLabels[hosting.status] : "未回覆",
       hosting?.guest_type ? Hosting.guestLabels[hosting.guest_type] : "",
       hosting?.guest_count ?? "", hosting?.pickup_count ?? "",
+      identityText(registration, activities), mealFee(registration, activities),
     ]);
   }
   const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
@@ -495,11 +545,12 @@ async function downloadCsv() {
 
 // A new registration answers every activity. An edit only has to keep existing answers:
 // an activity the person never answered stays 未回覆 until they choose (requireAll = false).
-function renderChoiceFields(container, choices = new Map(), requireAll = true) {
+function renderChoiceFields(container, choices = new Map(), requireAll = true, identity = null) {
   container.replaceChildren();
   for (const activity of currentActivities()) {
     const item = document.createElement("div");
     item.className = "staff-choice";
+    item.dataset.activity = activity.id;
     const title = document.createElement("strong");
     title.textContent = activity.title;
     item.append(title);
@@ -517,6 +568,18 @@ function renderChoiceFields(container, choices = new Map(), requireAll = true) {
     }
     container.append(item);
   }
+  Meals.render(container, currentActivities(), identity);
+}
+
+// Staff follow the same audience and identity rules as the public form.
+const checkedStatus = (selector) => document.querySelector(`${selector} [name="hosting_status"]:checked`)?.value ?? null;
+function syncNewMeals() {
+  Meals.sync(document.querySelector("#new-registration-choices"), currentActivities(), checkedStatus("#new-registration-hosting"));
+}
+function syncDetailMeals() {
+  // A void row stays fully disabled; sync would enable allowed choices again.
+  if (selectedRegistration?.record_status !== "active") return;
+  Meals.sync(document.querySelector("#detail-choices"), currentActivities(), checkedStatus("#detail-hosting"));
 }
 
 // Redrawn whenever districts or activities change, so it keeps what staff already entered.
@@ -529,8 +592,8 @@ function renderNewRegistrationForm() {
     districts.add(new Option(district.name, district.id));
   }
   districts.value = entered.get("district_id") ?? "";
-  const choices = new Map(choicesFromForm(entered).map((item) => [item.activity_id, item.attending]));
-  renderChoiceFields(document.querySelector("#new-registration-choices"), choices);
+  const choices = new Map(choicesFromForm(form).map((item) => [item.activity_id, item.attending]));
+  renderChoiceFields(document.querySelector("#new-registration-choices"), choices, true, Meals.readIdentity(form));
   const hosting = document.querySelector("#new-registration-hosting");
   // read() is null until the first question is answered, but pickup may already be chosen (open survey).
   const pickup = hosting.querySelector('[name="pickup_count"]')?.value;
@@ -539,11 +602,12 @@ function renderNewRegistrationForm() {
   // A closed survey disables pickup until an answer; a kept value would show but not be saved.
   const pickupSelect = hosting.querySelector('[name="pickup_count"]');
   if (pickup && !pickupSelect.disabled) pickupSelect.value = pickup;
+  syncNewMeals();
 }
 
-function choicesFromForm(data) {
-  return currentActivities().filter((activity) => data.get(`activity_${activity.id}`) !== null)
-    .map((activity) => ({ activity_id: activity.id, attending: data.get(`activity_${activity.id}`) === "true" }));
+// Read from the radios, not FormData, which leaves out the locked (disabled) restricted choices.
+function choicesFromForm(form) {
+  return Meals.choices(form, currentActivities());
 }
 
 function openRegistration(registration) {
@@ -563,7 +627,7 @@ function openRegistration(registration) {
     districts.append(option);
   }
   const choices = new Map(registration.registration_choices.map((choice) => [choice.activity_id, choice.attending]));
-  renderChoiceFields(document.querySelector("#detail-choices"), choices, false);
+  renderChoiceFields(document.querySelector("#detail-choices"), choices, false, registration.meal_identity ?? null);
   document.querySelector("#import-form").elements.status.value = registration.import_status;
   // Only active rows can be edited; a historical cancelled row can still be voided.
   const isActive = registration.record_status === "active";
@@ -575,6 +639,7 @@ function openRegistration(registration) {
   Hosting.render(hostingFields, hosting, hosting !== null);
   // The fieldset disables every hosting control, whatever its tag; sync() cannot re-enable them.
   hostingFields.closest("fieldset").disabled = !isActive;
+  syncDetailMeals();
   const voidForm = document.querySelector("#void-form");
   voidForm.reset();
   voidForm.querySelectorAll("input, button").forEach((control) => control.disabled = registration.record_status === "void");
@@ -920,12 +985,16 @@ document.querySelector("#edit-registration-form").addEventListener("submit", asy
   event.preventDefault();
   const form = event.currentTarget;
   const data = new FormData(form);
-  const choices = choicesFromForm(data);
+  const choices = choicesFromForm(form);
+  // Saving applies the audience rule to sign-ups from before an activity was restricted.
+  const reverted = Meals.revertedCount(document.querySelector("#detail-choices"));
+  if (reverted && !confirm(`這筆登記有 ${reverted} 項限定活動不符報名對象，儲存後會改為不參加。確定儲存？`)) return;
   try {
     await api("save_registration", {
       registration_id: selectedRegistration.id, full_name: data.get("full_name"),
       district_id: Number(data.get("district_id")), choices,
       hosting: Hosting.read(document.querySelector("#detail-hosting")),
+      meal_identity: Meals.readIdentity(document.querySelector("#detail-choices")),
     });
     await refreshRegistration();
     showMessage("登記資料已儲存。");
@@ -935,7 +1004,9 @@ document.querySelector("#edit-registration-form").addEventListener("submit", asy
 let newRegistrationRequestId = crypto.randomUUID();
 document.querySelector("#new-registration-form").addEventListener("input", () => {
   newRegistrationRequestId = crypto.randomUUID();
+  syncNewMeals();
 });
+document.querySelector("#edit-registration-form").addEventListener("input", syncDetailMeals);
 document.querySelector("#new-registration-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -947,8 +1018,9 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
     const result = await api("create_registration", {
       create_request_id: newRegistrationRequestId,
       full_name: data.get("full_name"), district_id: Number(data.get("district_id")),
-      choices: choicesFromForm(data),
+      choices: choicesFromForm(form),
       hosting: Hosting.read(document.querySelector("#new-registration-hosting")),
+      meal_identity: Meals.readIdentity(document.querySelector("#new-registration-choices")),
     });
     newRegistrationRequestId = crypto.randomUUID();
     const notice = document.querySelector("#new-registration-code");

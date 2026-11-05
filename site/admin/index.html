@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="./staff.css" />
     <script src="../config.js"></script>
     <script src="../hosting.js" defer></script>
+    <script src="../meals.js" defer></script>
     <script src="./staff.js" defer></script>
   </head>
   <body>
@@ -107,7 +108,7 @@
           <div class="staff-actions"><button id="refresh-stats" type="button">更新統計</button><button id="download-csv" type="button" class="secondary">下載 CSV</button></div>
           <p id="stats-summary"></p>
           <h3>各活動</h3>
-          <div class="table-scroll"><table class="numeric"><thead><tr><th>活動</th><th>參加</th><th>不參加</th><th>未回覆</th><th>預估費用</th></tr></thead><tbody id="stats-rows"></tbody></table></div>
+          <div class="table-scroll"><table class="numeric"><thead><tr><th>活動</th><th>參加</th><th>其中學生</th><th>不參加</th><th>未回覆</th><th>預估費用</th><th>預估成本</th><th>預估補貼</th></tr></thead><tbody id="stats-rows"></tbody></table></div>
           <h3>各區</h3>
           <div class="table-scroll"><table class="numeric"><thead><tr><th>區</th><th>有效登記</th><th>預估費用</th></tr></thead><tbody id="district-stats-rows"></tbody></table></div>
           <h3>各區各活動</h3>
@@ -191,7 +192,11 @@
             <label>地址<input name="address" maxlength="300" /></label>
             <label>地圖連結<input name="map_url" type="url" maxlength="1000" /></label>
             <label>說明<textarea name="description" maxlength="2000"></textarea></label>
-            <label>每人規劃費用（留空代表未設定）<input name="fee_amount" type="number" min="0" /></label>
+            <label>一般每人費用（留空代表未設定）<input name="fee_amount" type="number" min="0" /></label>
+            <label>學生每人費用（留空代表沒有學生價；0 代表學生免費）<input name="student_fee_amount" type="number" min="0" /></label>
+            <label>實際每人成本（只在後台統計顯示，公開頁看不到）<input name="cost_amount" type="number" min="0" /></label>
+            <label>報名對象<select name="audience"><option value="all">所有人</option><option value="hosting">有開家接待的聖徒（含家人已登記開家接待）</option></select></label>
+            <label>限定對象提示（選填，200 字內；留空顯示「本項優先開放有開家接待的聖徒報名」）<input name="audience_note" maxlength="200" /></label>
             <label>排序（選填；留空排最後）<input name="sort_order" type="number" /></label>
             <label class="check"><input name="is_published" type="checkbox" /> 公開活動</label>
             <div class="form-buttons"><button type="submit">儲存活動</button><button type="reset" class="secondary">取消編輯</button></div>

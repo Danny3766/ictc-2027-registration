@@ -20,6 +20,12 @@ let pageData;
 let activeIdentity = null;
 let queriedChoicesBaseline = null;
 let queriedHostingBaseline = null;
+let queriedIdentityBaseline = null;
+// The edit form as it first appears. Opening it can already turn a restricted activity signed up
+// before the restriction into 不參加 (and so hide the identity question); that alone is not an edit
+// to warn about, and it is saved only together with a change the person makes.
+let editStartChoices = null;
+let editStartIdentity = null;
 let queriedCanChange = false;
 let editMode = false;
 
@@ -125,14 +131,14 @@ function activityDetails(activity) {
       ${activity.venue ? `<p class="hint">地點：${escapeHtml(activity.venue)}</p>` : ""}
       ${activity.address ? `<p class="hint">地址：${escapeHtml(activity.address)}</p>` : ""}
       ${activity.map_url ? mapLink(activity.map_url) : ""}
-      ${activity.fee_amount != null ? `<p class="hint">規劃費用：NT$${escapeHtml(activity.fee_amount)}／人</p>` : ""}
+      ${Meals.feeText(activity) ? `<p class="hint">${escapeHtml(Meals.feeText(activity))}</p>` : ""}
       ${activity.description ? `<p class="hint">${escapeHtml(activity.description)}</p>` : ""}`;
 }
 
 function activityFields(activities, values = new Map()) {
   return activities.map((activity) => {
     const selected = values.get(activity.id);
-    return `<div class="activity">
+    return `<div class="activity" data-activity="${activity.id}">
       ${activityDetails(activity)}
       <div class="activity-options">
         <label><input type="radio" name="activity_${activity.id}" value="true" ${selected === true ? "checked" : ""} required>參加</label>
@@ -193,12 +199,8 @@ function districtOptions(districts) {
 }
 
 function choicesFrom(form) {
-  const data = new FormData(form);
-  const choices = pageData.activities.map((activity) => {
-    const value = data.get(`activity_${activity.id}`);
-    if (value === null) throw new Error("請回答每一項活動");
-    return { activity_id: activity.id, attending: value === "true" };
-  });
+  const choices = Meals.choices(form, pageData.activities);
+  if (choices.length !== pageData.activities.length) throw new Error("請回答每一項活動");
   return choices;
 }
 
@@ -213,14 +215,26 @@ function choicesMap(choices) {
 }
 
 function currentEditChoices() {
-  const data = new FormData(editForm);
-  return sortedChoices(pageData.activities.map((activity) => {
-    const value = data.get(`activity_${activity.id}`);
-    return { activity_id: activity.id, attending: value === null ? null : value === "true" };
-  }));
+  const answered = choicesMap(Meals.choices(editForm, pageData.activities));
+  return sortedChoices(pageData.activities.map((activity) => ({
+    activity_id: activity.id, attending: answered.has(activity.id) ? answered.get(activity.id) : null,
+  })));
 }
 
 const hostingOpen = () => Boolean(pageData?.settings.is_hosting_open);
+
+const currentEditIdentity = () => editMode ? Meals.readIdentity(editActivities) : queriedIdentityBaseline;
+const checkedHostingStatus = (container) => container.querySelector('[name="hosting_status"]:checked')?.value ?? null;
+
+// Restricted activities follow the 開家接待 answer on screen (or the stored one while it cannot be
+// edited); the identity question follows the student-priced meals chosen.
+function syncMeals() {
+  Meals.sync(registrationForm, pageData.activities, hostingOpen() ? checkedHostingStatus(hostingFields) : null);
+  if (editMode) {
+    Meals.sync(editActivities, pageData.activities,
+      hostingOpen() ? checkedHostingStatus(editHosting) : queriedHostingBaseline?.status ?? null);
+  }
+}
 
 // Only an open hosting survey is editable by the registrant; otherwise the stored answer stands.
 function currentEditHosting() {
@@ -228,9 +242,10 @@ function currentEditHosting() {
 }
 
 function hasUnsavedChanges() {
-  return Boolean(editMode && queriedChoicesBaseline
-    && (JSON.stringify(currentEditChoices()) !== JSON.stringify(queriedChoicesBaseline)
+  return Boolean(editMode && editStartChoices
+    && (JSON.stringify(currentEditChoices()) !== JSON.stringify(editStartChoices)
       || JSON.stringify(currentEditHosting()) !== JSON.stringify(queriedHostingBaseline)
+      || currentEditIdentity() !== editStartIdentity
       // Pickup can be chosen before the first question, which read() does not report yet.
       || (hostingOpen() && Number(editHosting.querySelector('[name="pickup_count"]')?.value
         ?? queriedHostingBaseline?.pickup_count ?? 0) !== (queriedHostingBaseline?.pickup_count ?? 0))));
@@ -279,16 +294,18 @@ function applyHostingChange(error) {
       if (editHosting.dataset.hosting === undefined) Hosting.render(editHosting, queriedHostingBaseline);
     } else {
       showHostingSummary();
-      // Only the hosting answer had changed: nothing is left to save.
-      if (!hasUnsavedChanges()) {
-        showConfirmation();
-        // Nothing was lost and the page is back to a normal confirmation, so this is not an error.
-        return showMessage("開家接待調查已關閉，接待內容維持原樣。");
-      }
     }
   } else if (queriedChoicesBaseline) {
     // A lookup shown in the other tab keeps its hosting summary and hint in step with the switch.
     showHostingSummary();
+  }
+  // Restricted activities now follow the answer that stands after the switch.
+  syncMeals();
+  // Only the hosting answer had changed: nothing is left to save.
+  if (editMode && !hostingOpen() && !hasUnsavedChanges()) {
+    showConfirmation();
+    // Nothing was lost and the page is back to a normal confirmation, so this is not an error.
+    return showMessage("開家接待調查已關閉，接待內容維持原樣。");
   }
   const button = editMode ? "「儲存修改」" : "「送出登記」";
   if (hostingOpen()) return showMessage(`開家接待調查已開放，請回答開家接待後再按${button}。`, true);
@@ -309,6 +326,10 @@ function showHostingSummary() {
 function showConfirmation() {
   editMode = false;
   editActivities.innerHTML = activitySummaryFields(pageData.activities, choicesMap(queriedChoicesBaseline ?? []));
+  if (queriedIdentityBaseline) {
+    editActivities.insertAdjacentHTML("beforeend", `<div class="activity"><strong>用餐身分</strong>
+      <p class="activity-status">登記狀態：${escapeHtml(Meals.identityLabels[queriedIdentityBaseline])}</p></div>`);
+  }
   showHostingSummary();
   showHostingDescriptions();
   editModeHint.hidden = true;
@@ -322,7 +343,11 @@ function beginEditing() {
   if (!queriedCanChange || !queriedChoicesBaseline) return;
   editMode = true;
   editActivities.innerHTML = activityFields(pageData.activities, choicesMap(queriedChoicesBaseline));
+  Meals.render(editActivities, pageData.activities, queriedIdentityBaseline);
   if (hostingOpen()) Hosting.render(editHosting, queriedHostingBaseline);
+  syncMeals();
+  editStartChoices = currentEditChoices();
+  editStartIdentity = currentEditIdentity();
   showHostingDescriptions();
   editModeHint.hidden = false;
   startEditButton.hidden = true;
@@ -375,7 +400,9 @@ async function loadPage() {
     registrationForm.elements.district_id.innerHTML = districtOptions(pageData.districts);
     queryForm.elements.district_id.innerHTML = districtOptions(pageData.districts);
     document.querySelector("#activities").innerHTML = activityFields(pageData.activities);
+    Meals.render(document.querySelector("#activities"), pageData.activities);
     showRegistrationHosting();
+    syncMeals();
     if (!pageData.settings.is_registration_open || pageData.activities.length === 0) {
       registrationForm.querySelector("button[type=submit]").disabled = true;
       showMessage("登記目前尚未開放。", true);
@@ -394,6 +421,7 @@ registrationForm.addEventListener("submit", async (event) => {
     const data = new FormData(registrationForm);
     const choices = choicesFrom(registrationForm);
     const hosting = hostingOpen() ? Hosting.read(hostingFields) : undefined;
+    const mealIdentity = Meals.readIdentity(registrationForm);
     await api({
       action: "create",
       create_request_id: crypto.randomUUID(),
@@ -403,6 +431,8 @@ registrationForm.addEventListener("submit", async (event) => {
       district_id: Number(data.get("district_id")),
       choices,
       hosting,
+      // Sent only when asked; the server treats a missing identity as no answer.
+      meal_identity: mealIdentity ?? undefined,
       turnstile_token: null,
     });
     // The success page shows what was sent, so the person can check it before leaving.
@@ -414,6 +444,7 @@ registrationForm.addEventListener("submit", async (event) => {
         attending: choice.attending,
       })),
       hosting: hosting ? `開家接待：${Hosting.summary(hosting)}` : null,
+      meal_identity: mealIdentity ? `用餐身分：${Meals.identityLabels[mealIdentity]}` : null,
     }));
     location.assign("./success.html");
   } catch (error) {
@@ -432,6 +463,7 @@ queryForm.addEventListener("submit", async (event) => {
   activeIdentity = null;
   queriedChoicesBaseline = null;
   queriedHostingBaseline = null;
+  queriedIdentityBaseline = null;
   queriedCanChange = false;
   editMode = false;
   try {
@@ -442,6 +474,8 @@ queryForm.addEventListener("submit", async (event) => {
     activeIdentity = identity;
     queriedChoicesBaseline = sortedChoices(registration.choices);
     queriedHostingBaseline = Hosting.normalize(registration.hosting);
+    // An identity left over from a removed student price is neither shown nor kept.
+    queriedIdentityBaseline = Meals.identityFor(pageData.activities, queriedChoicesBaseline, registration.meal_identity);
     queriedCanChange = registration.can_change;
     editForm.hidden = false;
     showConfirmation();
@@ -467,11 +501,14 @@ editForm.addEventListener("submit", async (event) => {
   if (choices.some((choice) => choice.attending === null)) return showMessage("請回答每一項活動", true);
   if (!editForm.reportValidity() || !hasUnsavedChanges()) return;
   const hosting = currentEditHosting();
+  const mealIdentity = currentEditIdentity();
   setBusy(editForm, true);
   try {
-    await api({ action: "update", ...activeIdentity, choices, ...(hostingOpen() ? { hosting } : {}) });
+    await api({ action: "update", ...activeIdentity, choices, meal_identity: mealIdentity ?? undefined,
+      ...(hostingOpen() ? { hosting } : {}) });
     queriedChoicesBaseline = choices;
     queriedHostingBaseline = hosting;
+    queriedIdentityBaseline = mealIdentity;
     showConfirmation();
     showMessage("修改已儲存，以下為目前登記內容。");
   } catch (error) {
@@ -488,7 +525,12 @@ editForm.addEventListener("submit", async (event) => {
 });
 
 startEditButton.addEventListener("click", beginEditing);
-editForm.addEventListener("input", () => { if (editMode) updateSaveState(); });
+registrationForm.addEventListener("input", syncMeals);
+editForm.addEventListener("input", () => {
+  if (!editMode) return;
+  syncMeals();
+  updateSaveState();
+});
 cancelEditButton.addEventListener("click", () => {
   if (hasUnsavedChanges() && !confirm("確定放棄尚未儲存的修改？")) return;
   showConfirmation();
