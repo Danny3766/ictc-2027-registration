@@ -532,8 +532,13 @@ function renderNewRegistrationForm() {
   const choices = new Map(choicesFromForm(entered).map((item) => [item.activity_id, item.attending]));
   renderChoiceFields(document.querySelector("#new-registration-choices"), choices);
   const hosting = document.querySelector("#new-registration-hosting");
+  // read() is null until the first question is answered, but pickup may already be chosen (open survey).
+  const pickup = hosting.querySelector('[name="pickup_count"]')?.value;
   // Required only while the public survey is open, matching the public form.
   Hosting.render(hosting, Hosting.read(hosting), Boolean(reference.settings.is_hosting_open));
+  // A closed survey disables pickup until an answer; a kept value would show but not be saved.
+  const pickupSelect = hosting.querySelector('[name="pickup_count"]');
+  if (pickup && !pickupSelect.disabled) pickupSelect.value = pickup;
 }
 
 function choicesFromForm(data) {

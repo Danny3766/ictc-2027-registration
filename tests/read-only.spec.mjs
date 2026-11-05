@@ -354,7 +354,8 @@ test("while hosting is open, a new registration must answer it and the success p
   await expect(pickup).toHaveValue("0");
   await expect(section).toContainText("同一台車只需一人填寫，避免重複計算。");
   await expect(pickup.locator("option")).toHaveText(["0 位（不能接機）", ...Array.from({ length: 6 }, (_, index) => `${index + 1} 位`)]);
-  await expect(pickup).toBeDisabled();
+  // The first question is required here, so pickup can be chosen before it.
+  await expect(pickup).toBeEnabled();
   await section.getByLabel("否", { exact: true }).check();
   await expect(pickup).toBeEnabled();
   await section.getByLabel("是", { exact: true }).check();
@@ -714,4 +715,22 @@ test("an empty site note leaves nothing under the address", async ({ page }) => 
   await page.goto("/");
   await expect(page.locator("#activities .activity")).toHaveCount(1);
   await expect(page.locator("#event-note")).toBeHidden();
+});
+
+test("changing only pickup on an unanswered registration still asks before discarding", async ({ page }) => {
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: hostingPage(true) });
+    return route.fulfill({ json: { ...queried(true), hosting: null } });
+  });
+  await page.goto("/");
+  await query(page);
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  const pickup = page.locator("#edit-hosting-section").getByLabel("2/19 或之前可以配搭接機幾位？");
+  await pickup.selectOption("2");
+  // The first question is still unanswered, so only pickup changed.
+  let asked = false;
+  page.once("dialog", (dialog) => { asked = true; return dialog.dismiss(); });
+  await page.getByRole("button", { name: "取消修改" }).click();
+  expect(asked).toBe(true);
+  await expect(pickup).toHaveValue("2");
 });

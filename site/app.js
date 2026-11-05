@@ -220,7 +220,10 @@ function currentEditHosting() {
 function hasUnsavedChanges() {
   return Boolean(editMode && queriedChoicesBaseline
     && (JSON.stringify(currentEditChoices()) !== JSON.stringify(queriedChoicesBaseline)
-      || JSON.stringify(currentEditHosting()) !== JSON.stringify(queriedHostingBaseline)));
+      || JSON.stringify(currentEditHosting()) !== JSON.stringify(queriedHostingBaseline)
+      // Pickup can be chosen before the first question, which read() does not report yet.
+      || (hostingOpen() && Number(editHosting.querySelector('[name="pickup_count"]')?.value
+        ?? queriedHostingBaseline?.pickup_count ?? 0) !== (queriedHostingBaseline?.pickup_count ?? 0))));
 }
 
 function updateSaveState() {

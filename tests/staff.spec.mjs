@@ -674,12 +674,14 @@ test("補登 must answer hosting while the public survey is open", async ({ page
   await form.getByRole("button", { name: "建立補登" }).click();
   expect(created).toBeUndefined();
   const hosting = page.locator("#new-registration-hosting");
+  // The first question is required here, so pickup can be chosen before it.
+  await hosting.getByLabel("2/19 或之前可以配搭接機幾位？").selectOption("1");
   await hosting.getByLabel("是", { exact: true }).check();
   await hosting.getByLabel("接待對象").selectOption({ label: "姊妹" });
   await hosting.getByLabel("可以接待幾位？").selectOption("2");
   await form.getByRole("button", { name: "建立補登" }).click();
   await expect(page.locator("#new-registration-code")).toHaveText("已建立流水號 2。本人日後可用相同的姓名與區查詢。");
-  expect(created.hosting).toEqual({ status: "hosting", guest_type: "sister", guest_count: 2, pickup_count: 0 });
+  expect(created.hosting).toEqual({ status: "hosting", guest_type: "sister", guest_count: 2, pickup_count: 1 });
   await expect(hosting.locator('input[name="hosting_status"]:checked')).toHaveCount(0);
 });
 
@@ -729,6 +731,21 @@ test("admins save the hosting switch and description from their own card", async
   await form.getByRole("button", { name: "儲存開家接待設定" }).click();
   await expect(page.locator("#message")).toHaveText("設定已儲存。");
   expect(saved).toEqual({ action: "save_reference", kind: "hosting", data: { is_hosting_open: true, hosting_description: "接待期間 2/19～2/22" } });
+});
+
+test("a 補登 pickup chosen before the first question survives a settings save", async ({ page }) => {
+  const openReference = () => ({ json: {
+    settings: { event_name: "測試", is_registration_open: true, is_hosting_open: true },
+    districts: [{ id: 1, name: "林森", sort_order: 1 }],
+    activities: [{ id: 1, title: "測試聚會", is_published: true, fee_amount: 0 }], program: [],
+  } });
+  await mockStaff(page, "admin", () => {}, "測試登記", { list_reference: openReference });
+  await login(page);
+  const pickup = page.locator("#new-registration-hosting").getByLabel("2/19 或之前可以配搭接機幾位？");
+  await pickup.selectOption("4");
+  await page.locator("#settings-form").getByRole("button", { name: "儲存網站設定" }).click();
+  await expect(page.locator("#message")).toHaveText("設定已儲存。");
+  await expect(pickup).toHaveValue("4");
 });
 
 test("admins save the site note from the right side of the settings card", async ({ page }) => {
