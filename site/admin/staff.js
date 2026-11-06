@@ -254,6 +254,20 @@ function setEditing(form, item) {
   }
 }
 
+function setAudienceOptions(editingId = null) {
+  const select = document.querySelector('#activity-form [name="audience"]');
+  const selected = select.value;
+  select.querySelectorAll('option[value^="activity:"]').forEach((option) => option.remove());
+  for (const activity of reference.activities) {
+    if (String(activity.id) === String(editingId)) continue;
+    const option = document.createElement("option");
+    option.value = `activity:${activity.id}`;
+    option.textContent = `${activity.title}${activity.is_published ? "" : "（未公開）"}`;
+    select.append(option);
+  }
+  select.value = selected;
+}
+
 // `only` redraws one table, so redrawing activities keeps unsaved input in the other forms.
 // A full redraw leaves the activity table alone while reordering, so the unsaved drag order stays.
 function renderReferenceRows(only) {
@@ -279,6 +293,7 @@ function renderReferenceRows(only) {
         cell(row, value);
       }
       editButton(row, () => {
+        if (table === "#activity-rows") setAudienceOptions(item.id);
         fillForm(document.querySelector(form), transform(item));
         setEditing(document.querySelector(form), item);
       });
@@ -304,6 +319,7 @@ function renderReference() {
     registration_deadline_at: taipeiInput(reference.settings.registration_deadline_at),
   }, false);
   fillForm(document.querySelector("#hosting-settings-form"), reference.settings, false);
+  setAudienceOptions(document.querySelector("#activity-form").dataset.editingId);
   renderReferenceRows();
   renderNewRegistrationForm();
 }
@@ -342,12 +358,14 @@ async function saveReference(event, kind) {
   if (kind === "hosting" && data.is_pickup_open && !reference.settings.is_pickup_open
     && !confirm("確定開放接機接待調查？公開登記頁與查詢頁將顯示接機問題。")) return;
   const edited = kind === "activity" && reference.activities.find((item) => String(item.id) === form.dataset.editingId);
-  if (edited && data.audience === "hosting" && edited.audience !== "hosting") {
+  if (edited && data.audience !== "all" && data.audience !== edited.audience) {
     // People who signed up before the restriction keep their answer until their next save.
     let outside;
     try {
       outside = activeRegistrations(await allRegistrations()).filter((registration) => attends(registration, edited)
-        && !Meals.eligible(data, hostingOf(registration)?.status)).length;
+        && !Meals.eligible(data, { hostingStatus: hostingOf(registration)?.status,
+          pickupStatus: pickupOf(registration)?.status, choices: registration.registration_choices,
+          activities: reference.activities })).length;
     } catch (error) { return showMessage(error.message, true); }
     if (outside && !confirm(`目前有 ${outside} 位不符對象的人已報名此活動，他們的報名會保留。確定改為限定對象？`)) return;
   }
@@ -436,7 +454,10 @@ async function showStatistics() {
       total.cost += cost;
       total.subsidy += cost - fee;
     }
-    const restricted = attendees.filter((registration) => !Meals.eligible(activity, hostingOf(registration)?.status)).length;
+    const restricted = attendees.filter((registration) => !Meals.eligible(activity, {
+      hostingStatus: hostingOf(registration)?.status, pickupStatus: pickupOf(registration)?.status,
+      choices: registration.registration_choices, activities: reference.activities,
+    })).length;
     if (restricted) outside.push(`${activity.title} ${restricted} 人`);
     const students = Meals.hasStudentPrice(activity)
       ? attendees.filter((registration) => registration.meal_identity === "student").length : "—";
@@ -618,12 +639,18 @@ function renderChoiceFields(container, choices = new Map(), requireAll = true, i
 // Staff follow the same audience and identity rules as the public form.
 const checkedStatus = (selector) => document.querySelector(`${selector} [name="hosting_status"]:checked`)?.value ?? null;
 function syncNewMeals() {
-  Meals.sync(document.querySelector("#new-registration-choices"), currentActivities(), checkedStatus("#new-registration-hosting"));
+  Meals.sync(document.querySelector("#new-registration-choices"), currentActivities(), {
+    hostingStatus: checkedStatus("#new-registration-hosting"),
+    pickupStatus: Pickup.read(document.querySelector("#new-registration-pickup"))?.status,
+  });
 }
 function syncDetailMeals() {
   // Only while editing: sync would re-enable allowed choices and show what saving would change.
   if (!editingRegistration) return;
-  Meals.sync(document.querySelector("#detail-choices"), currentActivities(), checkedStatus("#detail-hosting"));
+  Meals.sync(document.querySelector("#detail-choices"), currentActivities(), {
+    hostingStatus: checkedStatus("#detail-hosting"),
+    pickupStatus: Pickup.read(document.querySelector("#detail-pickup"))?.status,
+  });
 }
 
 // Redrawn whenever districts or activities change, so it keeps what staff already entered.
@@ -777,7 +804,11 @@ for (const [selector, kind] of [
 ]) {
   const form = document.querySelector(selector);
   form.addEventListener("submit", (event) => saveReference(event, kind));
-  if (!["settings", "hosting"].includes(kind)) form.addEventListener("reset", () => setEditing(form, null));
+  if (!["settings", "hosting"].includes(kind)) form.addEventListener("reset", () => {
+    setEditing(form, null);
+    // The activity being edited was left out of its own audience options; a new one may pick it.
+    if (kind === "activity") setAudienceOptions();
+  });
 }
 
 // Activity order: a toggle shows the ☰ column; dragging (mouse or touch, via Pointer Events,

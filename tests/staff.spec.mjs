@@ -1019,7 +1019,8 @@ test("the activity form saves prices, cost and audience, and confirms restrictin
   const replies = mealReplies();
   const open = { ...replies, list_reference: () => {
     const result = replies.list_reference();
-    result.json.activities = result.json.activities.map((item) => item.id === 1 ? { ...item, audience: "all" } : item);
+    result.json.activities = result.json.activities.map((item) => item.id === 1
+      ? { ...item, audience: "all" } : item.id === 3 ? { ...item, is_published: false } : item);
     return result;
   } };
   await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); }, "測試登記", open);
@@ -1030,6 +1031,10 @@ test("the activity form saves prices, cost and audience, and confirms restrictin
   await expect(form.locator('input[name="student_fee_amount"]')).toHaveValue("70");
   await expect(form.locator('input[name="cost_amount"]')).toHaveValue("150");
   await expect(form.locator('select[name="audience"]')).toHaveValue("all");
+  await expect(form.locator('select[name="audience"] option[value="pickup"]')).toHaveText("接機接待");
+  await expect(form.locator('select[name="audience"] option[value="activity:1"]')).toHaveCount(0);
+  await expect(form.locator('select[name="audience"] option[value="activity:2"]')).toHaveText("測試晚餐");
+  await expect(form.locator('select[name="audience"] option[value="activity:3"]')).toHaveText("測試聚會（未公開）");
   await form.locator('select[name="audience"]').selectOption("hosting");
   await form.locator('input[name="audience_note"]').fill("限有開家接待的家庭");
 

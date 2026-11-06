@@ -33,7 +33,7 @@ function mealResponse(error) {
   if (error?.message?.includes("MEAL_IDENTITY_REQUIRED")) return response({ error: "請選擇用餐身分" }, 400);
   if (error?.message?.includes("INVALID_MEAL_IDENTITY")) return response({ error: "請檢查用餐身分" }, 400);
   if (error?.message?.includes("AUDIENCE_RESTRICTED")) {
-    return response({ error: "有活動限有開家接待的聖徒報名；如需例外，請管理員先把該活動的報名對象改為所有人" }, 400);
+    return response({ error: "有活動不符合報名對象，請確認開家、接機與活動選擇" }, 400);
   }
   return null;
 }
@@ -290,6 +290,12 @@ export async function handler(request) {
     if (error) {
       if (lostAccess(error)) return lostAccessResponse();
       if (error.code === "23505") return response({ error: "名稱已存在" }, 409);
+      if (error.message?.includes("ACTIVITY_AUDIENCE_CYCLE")) {
+        return response({ error: "報名對象不能設定為活動本身，也不能形成活動之間的循環條件" }, 400);
+      }
+      if (error.message?.includes("ACTIVITY_AUDIENCE_NOT_FOUND")) {
+        return response({ error: "報名對象指定的活動不存在，請重新整理頁面" }, 400);
+      }
       // Settings also fail on check, not-null and bad date/time input.
       if (isInputError(error) || ["23514", "23502", "22007", "22008"].includes(error.code)) {
         return response({ error: "請檢查設定內容" }, 400);

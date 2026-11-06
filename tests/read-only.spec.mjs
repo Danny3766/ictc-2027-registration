@@ -406,6 +406,7 @@ test("公開接待區塊只顯示一個開家標題，接機問題使用相同�
     return [legend.fontFamily, legend.fontSize, legend.fontWeight, pickup.fontFamily, pickup.fontSize, pickup.fontWeight];
   });
   expect(styles.slice(0, 3)).toEqual(styles.slice(3));
+  await expect(section.locator(".pickup-heading")).toHaveCSS("font-weight", styles[2]);
 });
 
 test("接機獨立開放時，沒有開家的人能填寫並在查詢頁修改", async ({ page }) => {
@@ -857,6 +858,45 @@ const mealPage = (activities, settings = {}) => ({ ...openPage(), settings: { ..
 const studentDinner = { id: 2, title: "測試晚餐", category: "meal", fee_amount: 100, student_fee_amount: 60, audience: "all" };
 const restrictedLunch = { id: 1, title: "測試午餐", category: "meal", fee_amount: 120, student_fee_amount: 70, audience: "hosting", audience_note: null };
 
+test("pickup audience follows its own answer and leaves an empty note hidden", async ({ page }) => {
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: mealPage([
+      { id: 1, title: "接機限定活動", category: "meeting", audience: "pickup", audience_note: null },
+    ], { is_pickup_open: true, is_hosting_open: false }) });
+    return route.fulfill({ status: 201, json: { success: true } });
+  });
+  await page.goto("/");
+  const activity = page.locator('#activities [data-activity="1"]');
+  const yes = activity.locator('input[value="true"]');
+  await expect(yes).toBeDisabled();
+  await expect(activity.locator(".audience-note")).toHaveCount(0);
+  await page.locator("#pickup-fields").getByLabel("是", { exact: true }).check();
+  await expect(yes).toBeEnabled();
+  await yes.check();
+  await page.locator("#pickup-fields").getByLabel("否", { exact: true }).check();
+  await expect(yes).toBeDisabled();
+  await page.locator("#pickup-fields").getByLabel("是", { exact: true }).check();
+  await expect(yes).toBeChecked();
+});
+
+test("activity audience follows a published prerequisite and restores its answer", async ({ page }) => {
+  const prerequisite = { id: 2, title: "第一天", category: "meeting", audience: "all" };
+  const dependent = { id: 1, title: "第二天", category: "meeting", audience: "activity:2" };
+  await page.route("**/functions/v1/registration", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: mealPage([dependent, prerequisite]) });
+    return route.fulfill({ status: 201, json: { success: true } });
+  });
+  await page.goto("/");
+  const secondYes = page.locator('#activities input[name="activity_1"][value="true"]');
+  await expect(secondYes).toBeDisabled();
+  await page.locator('#activities input[name="activity_2"][value="true"]').check();
+  await secondYes.check();
+  await page.locator('#activities input[name="activity_2"][value="false"]').check();
+  await expect(secondYes).toBeDisabled();
+  await page.locator('#activities input[name="activity_2"][value="true"]').check();
+  await expect(secondYes).toBeChecked();
+});
+
 test("a student-priced meal asks for the identity, required, and the success page shows it", async ({ page }) => {
   let submitted;
   await page.route("**/functions/v1/registration", async (route) => {
@@ -933,13 +973,7 @@ test("a restricted activity opens and closes with the hosting answer on screen",
   const reverted = lunch.locator(".audience-reverted");
   const hosting = page.locator("#hosting-section");
   const note = lunch.locator(".activity-options .audience-note");
-  await expect(note).toHaveText("本項優先開放有開家接待的聖徒報名");
-  // The note sits on the same line as 參加／不參加 wherever the row has room.
-  if ((page.viewportSize()?.width ?? 0) >= 768) {
-    const [option, hint] = await Promise.all([lunch.locator(".activity-options label").first().boundingBox(), note.boundingBox()]);
-    expect(Math.abs((option.y + option.height / 2) - (hint.y + hint.height / 2))).toBeLessThan(4);
-    expect(hint.x).toBeGreaterThan(option.x);
-  }
+  await expect(note).toHaveCount(0);
   // No hosting answer yet: the activity shows, locked to 不參加, with nothing to answer.
   await expect(no).toBeChecked();
   await expect(yes).toBeDisabled();

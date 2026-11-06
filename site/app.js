@@ -231,13 +231,17 @@ const pickupOpen = () => Boolean(pageData?.settings.is_pickup_open);
 const currentEditIdentity = () => editMode ? Meals.readIdentity(editActivities) : queriedIdentityBaseline;
 const checkedHostingStatus = (container) => container.querySelector('[name="hosting_status"]:checked')?.value ?? null;
 
-// Restricted activities follow the 開家接待 answer on screen (or the stored one while it cannot be
-// edited); the identity question follows the student-priced meals chosen.
+// Restricted activities follow the current hosting, pickup and activity answers.
 function syncMeals() {
-  Meals.sync(registrationForm, pageData.activities, hostingOpen() ? checkedHostingStatus(hostingFields) : null);
+  Meals.sync(registrationForm, pageData.activities, {
+    hostingStatus: hostingOpen() ? checkedHostingStatus(hostingFields) : null,
+    pickupStatus: pickupOpen() ? Pickup.read(pickupFields)?.status : null,
+  });
   if (editMode) {
-    Meals.sync(editActivities, pageData.activities,
-      hostingOpen() ? checkedHostingStatus(editHosting) : queriedHostingBaseline?.status ?? null);
+    Meals.sync(editActivities, pageData.activities, {
+      hostingStatus: hostingOpen() ? checkedHostingStatus(editHosting) : queriedHostingBaseline?.status ?? null,
+      pickupStatus: currentEditPickup()?.status ?? null,
+    });
   }
 }
 

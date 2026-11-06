@@ -41,7 +41,7 @@ function mealResponse(error) {
   }
   if (error?.message?.includes("INVALID_MEAL_IDENTITY")) return response({ error: "請檢查用餐身分" }, 400);
   if (error?.message?.includes("AUDIENCE_RESTRICTED")) {
-    return response({ error: "有活動限有開家接待的聖徒報名，請確認開家接待的回答；畫面不符時請重新整理頁面" }, 400);
+    return response({ error: "有活動不符合報名對象，請確認開家、接機與活動選擇；畫面不符時請重新整理頁面" }, 400);
   }
   return null;
 }

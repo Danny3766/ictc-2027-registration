@@ -257,8 +257,8 @@
               <label>排序<input name="sort_order" type="number" /><small class="field-hint">選填；留空排最後</small></label>
             </div>
             <div class="field-row">
-              <label>報名對象<select name="audience"><option value="all">所有人</option><option value="hosting">有開家接待的聖徒（含家人已登記開家接待）</option></select></label>
-              <label class="grow">限定對象提示<input name="audience_note" maxlength="200" /><small class="field-hint">選填，200 字內；留空顯示「本項優先開放有開家接待的聖徒報名」</small></label>
+              <label>報名對象<select name="audience"><option value="all">所有人</option><option value="hosting">有開家接待的聖徒（含家人已登記開家接待）</option><option value="pickup">接機接待</option></select></label>
+              <label class="grow">限定對象提示<input name="audience_note" maxlength="200" /><small class="field-hint">選填，200 字內；留空則不顯示提示</small></label>
             </div>
             <label>說明<textarea name="description" maxlength="2000"></textarea></label>
             <div class="form-buttons"><button type="submit">儲存活動</button><button type="reset" class="secondary">取消編輯</button></div>
