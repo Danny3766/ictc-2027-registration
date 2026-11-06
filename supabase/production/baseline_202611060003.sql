@@ -2,22 +2,22 @@
 -- 只在全新的正式 Supabase 專案執行一次；測試專案與已套用過 migration 的資料庫不得執行。
 -- 內容與逐支執行相同，只移除各檔自己的 begin; 與 commit;。任何一段失敗，整份回滾。
 -- 之後新增的 migration 照常放 supabase/migrations/，正式與測試專案都逐支套用。
--- 來源檔與 SHA-256（原始位元組）：
---   202611030001_initial.sql  f06d1f380660e67e762e3851a67ce95c49dbbc9a85ed35496d053c29188e6a83
---   202611030002_registration_rpcs.sql  5193eef58ae9884f245abd3988b6c4a7c1fa680b7e692793df326f0b7a83ef94
---   202611030003_public_choices_and_activity_details.sql  2b9dd1a393f6a499435abba550ce8aab124a8495f9aaeb75345af75481e1ba48
---   202611030004_create_rate_limit_and_test_guard.sql  5b86040659ba5fe5a0761f4d3c769b6f681c25dfc5a76f04119c918e63980189
---   202611040001_staff_backoffice_and_name_lookup.sql  80d08fbe154040c789d8e050ed63aaeb5ef89d5e2e1458ec8061fba670435167
---   202611040002_activity_reorder.sql  f84b7caa81b03602b8b95afe9186afa58871cfff3980e510f4b4ba90f41e2ac6
---   202611040003_activity_time_precision.sql  01318109bbfcbc855d2d3ace1e11d492626f77cf2b3bb79439141dd732ebc89c
---   202611050001_hosting.sql  6e0d133d6bb2f8213cd7a5167abc21c8345dabef78de6ac0a1821ac2857c209d
---   202611050002_hosting_review_fixes.sql  050c5c11be82e1884242d89a3cd5c8573fe3e526f910e404c938024a5e4e9c85
---   202611050003_staff_account_management.sql  bd8379846f02f7e2eb350076117654687ad037e07e6564e67db30d0ec5517743
---   202611050004_hosting_dropdowns_site_note_other_district.sql  50cb851c9638d7b74b8eba0bdd592102f6c608bc89cf42c4ba7019d138f7cca7
---   202611050005_hosting_pickup.sql  e5567f571f2425ae989eb2c065676642c39ea72ab3e2319b64fdcf99d45b556a
---   202611050006_meal_pricing_and_audience.sql  37f6aebb7a8114d76e2e4c9ce06c93519c6cf2ab851dd4bd75b4aba771bdc23b
---   202611060001_independent_pickup.sql  f63a3bc5f15db5aefa72c72fe22c0c5d945262563c14ec7a3885fc875c3981df
---   202611060002_activity_audiences.sql  81fdfdf7ea5fd18f6b698ad145ff5cc656b59b965ce699a8beffa920ec38e34a
+-- 來源檔與 SHA-256（git 內存的 LF 內容，可用 git show HEAD:<檔案> | sha256sum 核對）：
+--   202611030001_initial.sql  56b6c501d2680924be12b51fe5e64bba99ae7791a1bab4ce679ccae2d89e26e8
+--   202611030002_registration_rpcs.sql  aa662ff1c47e28ae0c63783b384688bd69d0c6fb39300a72649cb8ef67da8bd6
+--   202611030003_public_choices_and_activity_details.sql  b28e2d0b94a2567c90cb827685d2db693d4135c4a9daeee1ad4aa2de1dae2a3c
+--   202611030004_create_rate_limit_and_test_guard.sql  e39ce09ffe4a9b7b6bbd8e4d1d9912f27caa8234e950b4755757481ccd2d741b
+--   202611040001_staff_backoffice_and_name_lookup.sql  bb2d86430ebcb8aba5b5e4fd39169bb6bf4f6dcd20d3115d1858f57ae2abc518
+--   202611040002_activity_reorder.sql  9e66a196eceb9ce1d50dce6c7d8e4f79c21679145ee703956debd543167f5be8
+--   202611040003_activity_time_precision.sql  3965273061a375155021ff8081092bc553c4ffe6171a6399b6d68b376a5ec8b2
+--   202611050001_hosting.sql  825b73b87f7b54d9ef888fcfc3b94c71697856a05d819890bbcb3fbcd2eeb7a8
+--   202611050002_hosting_review_fixes.sql  7a26d943d638404788c78850abb81e31e33a9319492b8e3d0bc9bc93555677bb
+--   202611050003_staff_account_management.sql  84bb24bc059485820da584c6cc06cfad7b7b4d5c1af53aab381cb1bd2008334b
+--   202611050004_hosting_dropdowns_site_note_other_district.sql  b566ec65046bf1bac5d75c5f8fff7bed3a3d40f3c8133ee29d6fe608b32132c1
+--   202611050005_hosting_pickup.sql  f7bac521088041665a85048af1506d3b1cb1a8a4eccab2984f118b3ea21f7fcd
+--   202611050006_meal_pricing_and_audience.sql  fafba98ea6cfefef8f71b67dcfbf7f686a30ecf821ad1c41c049f34091fa82b9
+--   202611060001_independent_pickup.sql  70b9f9682748e7d5ee733cd14c204c52e05e97fd614450748d621af1b3b13378
+--   202611060002_activity_audiences.sql  a220a16b08fffa27ef834a15b27fa6521f95d3e60663ad940d879ce7189ad8b3
 --   202611060003_revoke_default_api_grants.sql  5eebd15030d402fde6930bab8eb45481be358509730801c2fd9cbeee482b21e2
 
 begin;
