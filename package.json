@@ -1,0 +1,16 @@
+{
+  "name": "ictc-2027-registration",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=26.13.0 <27",
+    "npm": ">=11.20.0 <12"
+  },
+  "scripts": {
+    "start": "node scripts/serve-site.mjs",
+    "test:e2e": "node scripts/test-e2e.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
