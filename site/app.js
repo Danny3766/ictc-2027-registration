@@ -136,7 +136,7 @@ function activityDetails(activity, showMap = true) {
       ${activity.address ? `<p class="hint">地址：${escapeHtml(activity.address)}</p>` : ""}
       ${showMap && activity.map_url ? mapLink(activity.map_url) : ""}
       ${Meals.feeText(activity) ? `<p class="hint">${escapeHtml(Meals.feeText(activity))}</p>` : ""}
-      ${activity.description ? `<p class="hint">${escapeHtml(activity.description)}</p>` : ""}`;
+      ${activity.description ? `<p class="hint activity-description">${escapeHtml(activity.description)}</p>` : ""}`;
 }
 
 function activityFields(activities, values = new Map(), showMap = true) {

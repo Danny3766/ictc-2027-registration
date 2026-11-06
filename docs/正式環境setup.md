@@ -28,6 +28,26 @@
 
 開發／測試與正式環境是兩個獨立的 Supabase 專案。每次開啟 SQL Editor、Edge Functions 或 Authentication 頁面前，先確認 Dashboard 左上角顯示的是 `<正式專案>`。
 
+### 建立正式專案
+
+2026-11-06 已建立。日後重建時沿用以下設定：
+
+- **方案**：Free（2026-11-06 決定全程使用）。Free 方案的專案連續 7 天沒有請求會被自動暫停，暫停期間網站讀不到資料，要登入 Dashboard 手動恢復；也沒有自動備份，備份改用手動匯出（見 [TODO](TODO.md) 第 5 節）。每個組織最多 2 個啟用中的專案，測試與正式剛好各一個。
+- **Organization**：與測試專案相同。**Region**：與測試專案相同（測試專案的 **Project Settings** → **General** → **Region**）。
+- **Database Password**：按 **Generate a password** 產生，存進密碼管理工具，不要貼到對話或文件。
+- **Security options**：保留 **Data API + Connection String** 與 **Use public schema for Data API**。Edge Function 透過 Data API 存取 `public` schema。
+- 若勾選自動開啟 RLS，專案會自帶 event trigger 函式 `public.rls_auto_enable`，可以保留。它只在新建資料表時開啟 RLS，與 baseline 不衝突。
+
+建立後先確認是空的，再執行第 3 節：
+
+```sql
+-- 確認正式專案是空的（唯讀）。public_functions 若為 1，是上述 rls_auto_enable。
+select
+  (select count(*) from information_schema.tables where table_schema = 'public') as public_tables,
+  (select count(*) from pg_proc where pronamespace = 'public'::regnamespace) as public_functions,
+  (select count(*) from auth.users) as auth_users;
+```
+
 ### 只能在特定專案執行的 SQL
 
 - `supabase/testing/` 底下的所有檔案只能在測試專案使用，不要在正式環境執行。它們會檢查 `is_test_environment`，但不要依賴這道檢查。
@@ -69,7 +89,7 @@
 
 1. 填寫：
    - Email：`<帳號名稱>@accounts.invalid`。帳號名稱必須以小寫英文字母開頭，只能包含小寫英文字母、數字、`_`、`-`，長度 3 到 31 字元。
-   - Password：自己設一組至少 12 字元、不超過 72 bytes 的臨時密碼。一個中文字約佔 3 bytes。密碼不要貼到任何對話或文件。
+   - Password：自己設一組至少 12 字元、不超過 72 bytes 的臨時密碼。一個中文字約佔 3 bytes。不要求英文、數字、符號的組合，建議用密碼管理工具產生 16～20 字元的隨機英數字。密碼不要貼到任何對話或文件。
    - 勾選 **Auto Confirm User**。
 2. 按 **Create user**。
 3. 首次登入後台時，系統會要求改密碼，屆時再換成正式密碼。
@@ -87,13 +107,26 @@
 
 1. 確認左上角是 `<正式專案>`。
 2. 左側選單點 **SQL Editor** → **New query**。
-3. 開啟 `supabase/production/baseline_<編號>.sql`，全選複製，貼上後按 **Run**。檔案約 4,700 行，貼上後等編輯器載入完成再執行。
-4. 結果應顯示 `Success. No rows returned`。出現任何錯誤時，整份已自動回滾，先停下來確認錯誤原因，不要修改內容後重跑。
-5. 在下表記錄一列。
+3. 在 GitHub 打開 `develop` 分支上的 `supabase/production/baseline_<編號>.sql`，按 **Copy raw file** 複製全部內容。不要用滑鼠拖曳選取，可能漏行。檔案約 4,700 行，貼上後等編輯器載入完成，確認最後一行是 `commit;`，再按 **Run**。
+4. 成功時，SQL Editor 只顯示腳本中最後一個有回傳資料的查詢，也就是一列 `setval`（數字為 3），這是正常的。出現紅色 `ERROR` 時，整份已自動回滾，先停下來確認錯誤原因，不要修改內容後重跑。
+5. 執行下面的查詢確認結果，並在下表記錄一列。
+
+```sql
+-- baseline 執行後檢查（唯讀）
+select
+  (select count(*) from information_schema.tables where table_schema = 'public') as public_tables,
+  (select count(*) from public.activities) as activities,
+  (select count(*) from public.districts) as districts,
+  (select is_test_environment from public.site_settings) as is_test_environment,
+  (select is_registration_open from public.site_settings) as is_registration_open,
+  (select count(*) from pg_class where relnamespace = 'public'::regnamespace and relkind = 'r' and not relrowsecurity) as tables_without_rls;
+```
+
+`baseline_202611060003.sql` 的預期結果是 12、7、4、`false`、`false`、0。
 
 | 腳本檔名 | 執行日期 | 執行人 | 結果 |
 | --- | --- | --- | --- |
-| （待執行） | | | |
+| `baseline_202611060003.sql` | 2026-11-06 | 專案負責人 | 成功。12 張資料表、7 個活動、4 個區，測試旗標與登記皆為 `false`，所有資料表已開 RLS，與本機驗證結果一致。 |
 
 ## 4. 建立首位管理員的 `staff_profiles`
 
@@ -106,17 +139,33 @@
 
 1. 確認左上角是 `<正式專案>`。
 2. 左側選單點 **SQL Editor** → **New query**。
-3. 貼上下面的 SQL，把兩個 placeholder 換成實際值。`<帳號名稱>` 全部小寫，必須和第 2 節相同。
+3. 貼上下面的 SQL，把兩個 placeholder 換成實際值。`<帳號名稱>` 只出現一次，全部小寫，必須和第 2 節的 Email 相同；`username` 直接取 Email 的 `@` 前半段，避免兩處拼字不一致。
 
 ```sql
 insert into public.staff_profiles (auth_user_id, username, display_name, role)
-select id, '<帳號名稱>', '<顯示名稱>', 'admin'
+select id, split_part(email, '@', 1), '<顯示名稱>', 'admin'
 from auth.users
 where email = '<帳號名稱>@accounts.invalid';
 ```
 
-4. 按 **Run**。結果應顯示 `1 row affected`。若顯示 `0 rows`，代表 email 對不上 Auth 使用者，請回第 2 節核對。
+4. 按 **Run**。SQL Editor 對 `insert` 一律顯示 `Success. No rows returned`，看不出是否真的新增，要用下面的查詢確認。結果不含帳號名稱：
+
+```sql
+-- 確認管理員 profile 已建立（唯讀）
+select
+  count(*) as admin_profiles,
+  bool_and(p.must_change_password) as must_change_password,
+  bool_and(p.is_active) as is_active,
+  bool_and(u.email = p.username || '@accounts.invalid') as email_matches
+from public.staff_profiles p
+join auth.users u on u.id = p.auth_user_id
+where p.role = 'admin';
+```
+
+   預期是 `1`、`true`、`true`、`true`。`admin_profiles` 為 `0` 代表 Email 對不上，回第 2 節的使用者清單複製 Email 再執行一次。
+
 5. SQL Editor 可能自動保存 query。執行完後到左側清單找這個 query，刪除它，避免帳號名稱留在 Dashboard。
+6. 後台登入時，「帳號」只輸入 `@` 前面的帳號名稱，系統會自動補上 `@accounts.invalid`。首次登入會要求把臨時密碼改成正式密碼。
 
 ## 5. Edge Functions
 
@@ -215,11 +264,12 @@ GitHub 讀取**被 push 的那個分支**上的 `pages.yml` 決定要不要部�
 
 `main` 最初只有一個 `Initial commit`，和開發分支沒有共同歷史，GitHub 無法直接開 PR。只有第一次需要接合：
 
-1. 從 `main` 建立暫時分支，用 `git merge --allow-unrelated-histories` 合併開發分支。`README.md` 衝突時採用開發分支的版本。
+1. 從 `main` 建立暫時分支，用 `git merge --allow-unrelated-histories` 合併 `develop`。`README.md` 衝突時採用開發分支的版本。來源必須是 `develop`，它才有只由 `main` 觸發的 `pages.yml`。
 2. 推上暫時分支，開 PR 進 `main`，在 PR 檢視整批上線內容。
 3. 第 1～6 節與 7-2 都完成後，才合併這個 PR。合併當下就會部署正式站。
+4. 合併方式必須選 **Create a merge commit**。**Squash and merge** 或 **Rebase and merge** 會讓 `main` 再次與 `develop` 沒有共同歷史。
 
-接合後，之後都直接從 `develop` 開 PR 進 `main`。
+2026-11-06 已完成：PR #26 以 merge commit 合併，`develop` 已是 `main` 的祖先。之後都直接從 `develop` 開 PR 進 `main`，合併方式一樣選 **Create a merge commit**。
 
 ※ 7-4 部署後核對
 
@@ -269,6 +319,8 @@ order by relname;
 - [ ] 8-1、8-2 查詢結果符合預期。
 
 全部打勾後，接著進行 [TODO](TODO.md) 第 4 節的 smoke test 與驗收，並把結果記在 [驗收紀錄](驗收紀錄.md)。
+
+2026-11-06 首次建置：第 1～8 節全部通過，結果記在[驗收紀錄](驗收紀錄.md)「2026-11-06 正式環境建置」。
 
 ## 9. 上線後的分支、測試與正式站更新
 
