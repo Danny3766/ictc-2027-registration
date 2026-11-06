@@ -1,0 +1,7 @@
+project_id = "local"
+
+[functions.registration]
+verify_jwt = false
+
+[functions.staff]
+verify_jwt = true
