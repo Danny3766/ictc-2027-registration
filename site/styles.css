@@ -52,7 +52,7 @@ fieldset { padding: 0; border: 0; }
 .hosting-section > legend { float: left; width: 100%; padding: 0; }
 /* Every block after the floated legend clears it; the first one may be a hidden description. */
 .hosting-section > legend ~ * { clear: left; }
-.hosting-description { white-space: pre-line; }
+.hosting-description, .pickup-description, .activity-description { white-space: pre-line; }
 .hosting-question { margin: .5rem 0 0; }
 .pickup-survey.with-hosting { margin-top: 1.75rem; padding-top: 1.1rem; border-top: 1px solid #d9e6df; }
 .pickup-heading { margin: 0; }
