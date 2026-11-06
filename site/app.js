@@ -280,10 +280,12 @@ function showHostingDescriptions() {
 function showRegistrationHosting() {
   showHostingDescriptions();
   hostingSection.hidden = !hostingOpen() && !pickupOpen();
-  hostingSection.querySelector("legend").textContent = hostingOpen() && pickupOpen()
-    ? "開家接待與接機接待" : hostingOpen() ? "開家接待" : "接機接待";
+  hostingSection.querySelector("legend").textContent = hostingOpen() ? "開家接待" : "接機接待";
   hostingSection.querySelector(".hosting-survey").hidden = !hostingOpen();
-  hostingSection.querySelector(".pickup-survey").hidden = !pickupOpen();
+  const pickupSurvey = hostingSection.querySelector(".pickup-survey");
+  pickupSurvey.hidden = !pickupOpen();
+  pickupSurvey.classList.toggle("with-hosting", hostingOpen() && pickupOpen());
+  pickupSurvey.querySelector(".pickup-heading").hidden = !hostingOpen() || !pickupOpen();
   if (!hostingOpen()) {
     hostingFields.replaceChildren();
     delete hostingFields.dataset.hosting;
@@ -331,9 +333,12 @@ function applyHostingChange(error) {
 // While hosting is closed an existing answer stays visible but read-only; without one the section stays hidden.
 function showHostingSummary() {
   editHostingSection.hidden = !hostingOpen() && !pickupOpen() && !queriedHostingBaseline && !queriedPickupBaseline;
-  editHostingSection.querySelector("legend").textContent = (hostingOpen() || queriedHostingBaseline)
-    && (pickupOpen() || queriedPickupBaseline) ? "開家接待與接機接待"
-      : hostingOpen() || queriedHostingBaseline ? "開家接待" : "接機接待";
+  editHostingSection.querySelector("legend").textContent = hostingOpen() || queriedHostingBaseline
+    ? "開家接待" : "接機接待";
+  const editPickupSurvey = document.querySelector("#edit-pickup-survey");
+  const hasHosting = Boolean(hostingOpen() || queriedHostingBaseline);
+  editPickupSurvey.classList.toggle("with-hosting", hasHosting && Boolean(pickupOpen() || queriedPickupBaseline));
+  editPickupSurvey.querySelector(".pickup-heading").hidden = !editMode || !hasHosting || !pickupOpen();
   if (!editMode || !hostingOpen()) {
     delete editHosting.dataset.hosting;
     editHosting.innerHTML = hostingOpen() || queriedHostingBaseline
