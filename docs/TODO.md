@@ -57,17 +57,18 @@
 
 ### 4. 建立及驗收正式環境
 
-- [ ] 建立獨立正式資料環境，透過安全方式確認環境身分，避免誤連開發環境。
-- [ ] 依相同版本順序套用 migrations、seed 與 Edge Function；逐項記錄正式環境已套用的 migration，禁止重複執行一次性 SQL。
-- [ ] 依核准的部署程序套用資料庫遷移與函式，並核對部署結果。
-- [ ] 設定正式網站公開連線資訊與服務端 secrets；確認前端只包含可公開的設定值。
+- [x] 建立獨立正式資料環境，透過安全方式確認環境身分，避免誤連開發環境。（2026-11-06，Free 方案）
+- [x] 依相同版本順序套用 migrations、seed 與 Edge Function；逐項記錄正式環境已套用的 migration，禁止重複執行一次性 SQL。（2026-11-06 以 `baseline_202611060003.sql` 一次套用至 `202611060003`，紀錄在[正式環境設定流程](正式環境setup.md)第 3 節；之後的 migration 逐支記錄。）
+- [x] 依核准的部署程序套用資料庫遷移與函式，並核對部署結果。
+- [x] 設定正式網站公開連線資訊與服務端 secrets；確認前端只包含可公開的設定值。
 - [ ] 正式網站先保持登記關閉，部署後檢查資料權限、Edge Function、既有防濫用控制、活動公開狀態與錯誤處理。
 - [ ] 用正式環境執行建立、姓名與區查詢、修改與作廢 smoke test，並驗證後台兩種角色；使用明確標記的測試登記。
 - [ ] 用 iPhone、iPad 或 Mac 的實際 Safari 完成 smoke test；Playwright WebKit 僅作自動化輔助。
 
 ### 5. 備份、清除與開放
 
-- [ ] 演練正式資料備份及還原方式，確認備份檔位置與存取權限。
+- [ ] 演練正式資料備份及還原方式，確認備份檔位置與存取權限。正式專案為 Free 方案，沒有自動備份，要訂出手動匯出的頻率與存放位置。
+- [ ] Free 方案的專案連續 7 天沒有請求會被暫停：開放登記後每週至少開一次正式站或後台；若發現暫停，到 Dashboard 恢復專案。
 - [ ] 清除正式測試資料前，確認目標環境、資料範圍與筆數；先備份並核對範圍。
 - [ ] 依核准範圍清除測試登記及相關資料；保留正式活動與系統設定。
 - [ ] 依核准程序完成驗收資料處理，並確認正式環境狀態符合開放條件。
@@ -322,6 +323,6 @@ Q43 已確認。
 - [x] 本機完成：`202611060003_revoke_default_api_grants.sql` 撤銷 Supabase 預設給 `anon`、`authenticated` 的資料表、序列與函式權限，只保留原本刻意開放的公開讀取，並停止新物件自動授權。在模擬 Supabase 預設權限的本機資料庫驗證：私有資料表匿名不可讀、函式匿名不可執行；四支 `supabase/testing` 驗證以 `service_role` 執行通過。
 - [x] 本機完成：`supabase/production/baseline_202611060003.sql` 依序串接 16 支 migration 成單一交易，與逐支執行比對結構、權限與初始資料完全一致。
 - [x] `pages.yml` 只由 `main` 觸發；分支與發布規則寫入 [正式環境設定流程](正式環境setup.md) 第 7、9 節。
-- [ ] 測試專案套用 `202611060003_revoke_default_api_grants.sql`（不需重新部署 Edge Function），以[正式環境設定流程](正式環境setup.md) 8-2 查詢確認私有表 `anon_can_read` 全為 `false`，並在本機連測試 Supabase 做一次登記、查詢與後台 smoke test。
-- [ ] `feat/ver-001` 改名為 `develop`，刪除 `feat/ver-001-main`。
-- [ ] 依[正式環境設定流程](正式環境setup.md) 第 1～8 節建立正式站：Auth、管理員、baseline、`staff_profiles`、Edge Function、GitHub Variables、部署環境只允許 `main`、第一次接合 `main` 並開上線 PR、部署後核對。
+- [x] 測試專案套用 `202611060003_revoke_default_api_grants.sql`（不需重新部署 Edge Function），確認私有表匿名不可讀，並完成登記、查詢、修改與後台 smoke test。（2026-11-06）
+- [x] `feat/ver-001` 改名為 `develop`，刪除 `feat/ver-001-main`。（2026-11-06）
+- [x] 依[正式環境設定流程](正式環境setup.md) 第 1～8 節建立正式站：Auth、管理員、baseline、`staff_profiles`、Edge Function、GitHub Variables、部署環境只允許 `main`、第一次接合 `main` 並開上線 PR、部署後核對。
