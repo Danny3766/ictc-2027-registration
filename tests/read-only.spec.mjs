@@ -380,6 +380,34 @@ const hostingPage = (open) => ({
 });
 const brothers = { status: "hosting", guest_type: "brother", guest_count: 2 };
 
+test("公開接待區塊只顯示一個開家標題，接機問題使用相同字體", async ({ page }) => {
+  let pickupOpen = false;
+  await page.route("**/functions/v1/registration", (route) => route.fulfill({ json: {
+    ...hostingPage(true), settings: { ...hostingPage(true).settings, is_pickup_open: pickupOpen },
+  } }));
+  await page.goto("/");
+  const section = page.locator("#hosting-section");
+  await expect(section.locator("legend")).toHaveText("開家接待");
+  await expect(section.locator(".hosting-survey > .hosting-question")).toHaveCount(0);
+  await expect(section.locator(".pickup-survey")).toBeHidden();
+
+  pickupOpen = true;
+  await page.reload();
+  await expect(section.locator("legend")).toHaveText("開家接待");
+  await expect(section.locator(".hosting-survey > .hosting-question")).toHaveCount(0);
+  await expect(section.locator(".pickup-heading")).toHaveText("接機接待");
+  await expect(section.locator(".pickup-heading")).toBeVisible();
+  await expect(section.locator(".pickup-survey")).toHaveCSS("border-top-style", "solid");
+  await expect(section.locator(".pickup-survey")).toHaveCSS("margin-top", "28px");
+  await expect(section.locator(".pickup-question")).toHaveText("2/19 或之前可以配搭接機幾位？");
+  const styles = await section.evaluate((element) => {
+    const legend = getComputedStyle(element.querySelector("legend"));
+    const pickup = getComputedStyle(element.querySelector(".pickup-question"));
+    return [legend.fontFamily, legend.fontSize, legend.fontWeight, pickup.fontFamily, pickup.fontSize, pickup.fontWeight];
+  });
+  expect(styles.slice(0, 3)).toEqual(styles.slice(3));
+});
+
 test("接機獨立開放時，沒有開家的人能填寫並在查詢頁修改", async ({ page }) => {
   const requests = [];
   const settings = { ...hostingPage(false).settings, is_pickup_open: true, pickup_description: "同車只填一人" };
@@ -394,7 +422,9 @@ test("接機獨立開放時，沒有開家的人能填寫並在查詢頁修改",
   const section = page.locator("#hosting-section");
   await expect(section.locator("legend")).toHaveText("接機接待");
   await expect(section.locator(".hosting-survey")).toBeHidden();
-  await expect(section.locator(".pickup-question")).toHaveCSS("font-weight", "700");
+  await expect(section.locator(".pickup-heading")).toBeHidden();
+  await expect(section.locator(".pickup-survey")).toHaveCSS("border-top-style", "none");
+  await expect(section.locator(".pickup-question")).toHaveCSS("font-weight", "400");
   await expect(section).toContainText("同車只填一人");
   await page.locator('#registration-form input[name="full_name"]').fill("接機測試");
   await page.locator('#registration-form select[name="district_id"]').selectOption("1");
