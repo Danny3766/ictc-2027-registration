@@ -766,13 +766,13 @@ test("statistics count hosting answers and capacity", async ({ page }) => {
   await login(page);
   await page.getByRole("button", { name: "更新統計" }).click();
   const answers = page.locator("#hosting-status-stats-rows tr");
-  await expect(answers).toHaveCount(5);
+  await expect(answers).toHaveCount(4);
   await expect(answers.nth(0).locator("td")).toHaveText(["是", "2"]);
   await expect(answers.nth(1).locator("td")).toHaveText(["否", "0"]);
-  await expect(answers.nth(2).locator("td")).toHaveText(["家人已登記開家接待", "1"]);
-  await expect(answers.nth(3).locator("td")).toHaveText(["未回覆", "1"]);
-  await expect(answers.nth(4)).toHaveClass("total");
-  await expect(answers.nth(4).locator("td")).toHaveText(["合計", "4"]);
+  await expect(answers.nth(2).locator("td")).toHaveText(["未回覆", "1"]);
+  await expect(answers.nth(3)).toHaveClass("total");
+  await expect(answers.nth(3).locator("td")).toHaveText(["合計", "4"]);
+  await expect(page.locator("#hosting-status-note")).toHaveText("合計含未列出的接待回答。");
   const capacity = page.locator("#hosting-capacity-stats-rows tr");
   await expect(capacity).toHaveCount(5);
   await expect(capacity.nth(0).locator("td")).toHaveText(["夫婦", "1", "4"]);
@@ -784,6 +784,27 @@ test("statistics count hosting answers and capacity", async ({ page }) => {
   await expect(page.locator("#hosting-pickup-stats-rows tr td")).toHaveText([
     "是", "2", "3", "否", "1", "0", "未回覆", "1", "0", "合計", "4", "3",
   ]);
+});
+
+test("statistics CSV includes the visible sections and omits the family hosting count", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+  await mockStaff(page, "staff", () => {}, "測試登記", hostedRegistrations);
+  await login(page);
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下載統計 CSV" }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("registration-statistics.csv");
+  const csv = await readFile(await file.path(), "utf8");
+  expect(csv).toContain('"統計摘要"\r\n"有效登記 4 筆');
+  expect(csv).toContain('"各活動"\r\n"活動","參加","其中學生","不參加","未回覆"');
+  expect(csv).toContain('"測試聚會","2","—","2","0","NT$0","—","—"');
+  expect(csv).toContain('"各區"\r\n"區","有效登記","預估費用"\r\n"林森","4","NT$0"\r\n"合計","4","NT$0"');
+  expect(csv).toContain('"開家接待回覆"\r\n"回覆","登記數"\r\n"是","2"\r\n"否","0"\r\n"未回覆","1"\r\n"合計","4"\r\n"合計含未列出的接待回答。"');
+  expect(csv).not.toContain("家人已登記開家接待");
+  expect(csv).toContain('"接待對象"\r\n"接待對象","登記數","人數"');
+  expect(csv).toContain('"接機"\r\n"接機","登記數","可載人數"');
+  expect(csv).toContain('"各區各活動"\r\n\r\n"林森 有效登記 4 人"\r\n"活動","參加","不參加","未回覆"\r\n"測試聚會","2","2","0"');
+  await expect(page.locator("#stats-rows tr")).toHaveCount(1);
 });
 
 test("CSV adds the hosting and meal columns", async ({ page }, testInfo) => {
@@ -978,6 +999,33 @@ test("statistics estimate fees by identity, with cost, subsidy and the sign-ups 
     + "不符報名對象（限定前已報名）：測試限定午餐 1 人。");
   // The 合計 row matches the summary above.
   await expect(page.locator("#district-stats-rows tr td")).toHaveText(["林森", "4", "NT$450", "合計", "4", "NT$450"]);
+});
+
+test("statistics CSV uses active registrations and published activities for the fee totals", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium");
+  const replies = mealReplies();
+  await mockStaff(page, "staff", () => {}, "測試登記", {
+    ...replies,
+    list_reference: () => {
+      const result = replies.list_reference();
+      result.json.activities.push({ id: 4, title: "未公開活動", is_published: false, fee_amount: 999 });
+      return result;
+    },
+    list_registrations: () => {
+      const result = replies.list_registrations();
+      result.json.registrations.push({ ...result.json.registrations[0], id: "voided", serial_no: 5, record_status: "void" });
+      return result;
+    },
+  });
+  await login(page);
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下載統計 CSV" }).click();
+  const csv = await readFile(await (await download).path(), "utf8");
+  expect(csv).toContain('"有效登記 4 筆；預估費用 NT$450；預估成本 NT$300；預估補貼 NT$110');
+  expect(csv).toContain('"測試限定午餐","2","1","2","0","NT$190","NT$300","NT$110"');
+  expect(csv).toContain('"測試晚餐","3","1","1","0","NT$260","—","—"');
+  expect(csv).not.toContain("未公開活動");
+  await expect(page.locator("#stats-summary")).toContainText("有效登記 4 筆");
 });
 
 test("statistics name no activity once every charged one has a cost", async ({ page }) => {

@@ -546,6 +546,7 @@ function showHostingStatistics(registrations) {
   const statusRows = document.querySelector("#hosting-status-stats-rows");
   statusRows.replaceChildren();
   for (const [status, total] of Object.entries(answers)) {
+    if (status === "family_registered") continue;
     const row = document.createElement("tr");
     for (const value of [Hosting.statusLabels[status] ?? "未回覆", total]) cell(row, value);
     statusRows.append(row);
@@ -575,6 +576,41 @@ function csvCell(value) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
+function saveCsv(rows, filename) {
+  const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function appendStatisticsTable(rows, title, table, note = "") {
+  rows.push([title]);
+  for (const row of table.rows) rows.push([...row.cells].map((item) => item.textContent));
+  if (note) rows.push([note]);
+  rows.push([]);
+}
+
+async function downloadStatisticsCsv() {
+  await showStatistics();
+  const rows = [["統計摘要"], [document.querySelector("#stats-summary").textContent], []];
+  for (const [title, selector, noteSelector] of [
+    ["各活動", "#stats-rows"], ["各區", "#district-stats-rows"],
+    ["開家接待回覆", "#hosting-status-stats-rows", "#hosting-status-note"], ["接待對象", "#hosting-capacity-stats-rows"],
+    ["接機", "#hosting-pickup-stats-rows"],
+  ]) {
+    const note = noteSelector ? document.querySelector(noteSelector).textContent : "";
+    appendStatisticsTable(rows, title, document.querySelector(selector).closest("table"), note);
+  }
+  rows.push(["各區各活動"], []);
+  for (const card of document.querySelectorAll("#district-activity-cards .mini-card")) {
+    appendStatisticsTable(rows, card.querySelector("h3").textContent, card.querySelector("table"));
+  }
+  saveCsv(rows, "registration-statistics.csv");
+}
+
 async function downloadCsv() {
   const activities = currentActivities();
   const districts = new Map(reference.districts.map((item) => [item.id, item.name]));
@@ -594,13 +630,7 @@ async function downloadCsv() {
       identityText(registration, activities), mealFee(registration, activities),
     ]);
   }
-  const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "registration-export.csv";
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  saveCsv(rows, "registration-export.csv");
 }
 
 // A new registration answers every activity. An edit only has to keep existing answers:
@@ -1063,6 +1093,8 @@ document.querySelector("#refresh-stats").addEventListener("click", () =>
   showStatistics().catch((error) => showMessage(error.message, true)));
 document.querySelector("#download-csv").addEventListener("click", () =>
   downloadCsv().catch((error) => showMessage(error.message, true)));
+document.querySelector("#download-stats-csv").addEventListener("click", () =>
+  downloadStatisticsCsv().catch((error) => showMessage(error.message, true)));
 document.querySelector("#edit-registration-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;

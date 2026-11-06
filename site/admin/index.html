@@ -122,7 +122,7 @@
         <section id="section-stats" class="card">
           <h2>統計與匯出</h2>
           <p>依目前公開活動與有效登記計算。</p>
-          <div class="staff-actions"><button id="refresh-stats" type="button">更新統計</button><button id="download-csv" type="button" class="secondary">下載 CSV</button></div>
+          <div class="staff-actions"><button id="refresh-stats" type="button">更新統計</button><button id="download-csv" type="button" class="secondary">下載 CSV</button><button id="download-stats-csv" type="button" class="secondary">下載統計 CSV</button></div>
           <p id="stats-summary"></p>
           <h3>各活動</h3>
           <div class="table-scroll"><table class="numeric"><thead><tr><th>活動</th><th>參加</th><th>其中學生</th><th>不參加</th><th>未回覆</th><th>預估費用</th><th>預估成本</th><th>預估補貼</th></tr></thead><tbody id="stats-rows"></tbody></table></div>
@@ -134,6 +134,7 @@
             <section class="mini-card">
               <h3>開家接待回覆</h3>
               <div class="table-scroll"><table class="numeric"><thead><tr><th>回覆</th><th>登記數</th></tr></thead><tbody id="hosting-status-stats-rows"></tbody></table></div>
+              <p id="hosting-status-note" class="field-hint">合計含未列出的接待回答。</p>
             </section>
             <section class="mini-card">
               <h3>接待對象</h3>
