@@ -13,6 +13,8 @@ const invalidHostingMessage = "請檢查開家接待內容";
 const hostingClosed = { error: "開家接待調查已關閉", code: "HOSTING_CLOSED" };
 // A page loaded before this release has no hosting fields; its users can only act on "reload".
 const hostingRequired = { error: "開家接待調查已開放，請回答開家接待；看不到接待欄位時請重新整理頁面", code: "HOSTING_REQUIRED" };
+const pickupClosed = { error: "接機接待調查已關閉", code: "PICKUP_CLOSED" };
+const pickupRequired = { error: "接機接待調查已開放，請回答是否可以接機；看不到接機欄位時請重新整理頁面", code: "PICKUP_REQUIRED" };
 
 // The page shows the hosting fields when the switch opened after it loaded; the reply carries the
 // description too, which the admin may have written meanwhile. It is public text, like GET returns.
@@ -25,6 +27,10 @@ async function hostingRequiredResponse(database) {
     console.error("Failed to read hosting description", error);
   }
   return response(hostingRequired, 409);
+}
+async function pickupRequiredResponse(database) {
+  const { data } = await database.from("site_settings").select("pickup_description").single();
+  return response({ ...pickupRequired, pickup_description: data?.pickup_description }, 409);
 }
 // A page loaded before an admin changed prices or audiences can miss the question or show an
 // activity as open; reloading shows the current form. These stay 400: the lookup page treats a 409
@@ -107,7 +113,7 @@ export async function handler(request) {
 
   if (request.method === "GET") {
     const [settings, districts, activities, program] = await Promise.all([
-      database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_hosting_open,hosting_description").single(),
+      database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_hosting_open,hosting_description,is_pickup_open,pickup_description").single(),
       database.from("districts").select("id,name").order("sort_order"),
       database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,student_fee_amount,audience,audience_note").eq("is_published", true).order("sort_order"),
       database.from("program_items").select("event_date,start_time,end_time,title,note").eq("is_visible", true).order("sort_order"),
@@ -158,12 +164,13 @@ export async function handler(request) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }
     if (!isUuid(body.create_request_id)) return response({ error: "INVALID_REQUEST" }, 400);
-    const { error } = await database.rpc("create_registration", {
+    const { error } = await database.rpc("create_registration_with_pickup", {
       p_request_id: body.create_request_id,
       p_full_name: body.full_name,
       p_district_id: body.district_id,
       p_choices: body.choices,
       p_hosting: body.hosting ?? null,
+      p_pickup: body.pickup ?? null,
       p_meal_identity: body.meal_identity ?? null,
     });
     if (!error) return response({ success: true }, 201);
@@ -177,6 +184,9 @@ export async function handler(request) {
     if (error.message.includes("REGISTRATION_CLOSED")) return response({ error: "登記目前未開放" }, 409);
     if (error.message.includes("HOSTING_CLOSED")) return response(hostingClosed, 409);
     if (error.message.includes("HOSTING_REQUIRED")) return hostingRequiredResponse(database);
+    if (error.message.includes("PICKUP_CLOSED")) return response(pickupClosed, 409);
+    if (error.message.includes("PICKUP_REQUIRED")) return pickupRequiredResponse(database);
+    if (error.message.includes("INVALID_PICKUP")) return response({ error: "請檢查接機接待內容" }, 400);
     if (error.message.includes("INVALID_HOSTING")) return response({ error: invalidHostingMessage }, 400);
     if (isInputError(error)) return response({ error: "請檢查登記資料" }, 400);
     console.error(error.message);
@@ -203,14 +213,23 @@ export async function handler(request) {
       return response({ error: "服務暫時無法使用" }, 503);
     }
     if (data?.length !== 1) return response({ error: notFoundMessage }, 404);
-    return response(data[0]);
+    const pickup = await database.rpc("get_registration_pickup", {
+      p_full_name: body.full_name, p_district_id: districtId,
+    });
+    if (pickup.error?.message.includes("LOOKUP_CLOSED")) return response({ error: lookupClosedMessage }, 503);
+    if (pickup.error) {
+      console.error("Failed to query registration pickup", pickup.error);
+      return response({ error: "服務暫時無法使用" }, 503);
+    }
+    return response({ ...data[0], pickup: pickup.data });
   }
 
-  const { data, error } = await database.rpc("update_registration", {
+  const { data, error } = await database.rpc("update_registration_with_pickup", {
     p_full_name: body.full_name,
     p_district_id: districtId,
     p_choices: body.choices,
     p_hosting: body.hosting ?? null,
+    p_pickup: body.pickup ?? null,
     p_meal_identity: body.meal_identity ?? null,
   });
   const mealError = mealResponse(error);
@@ -219,6 +238,9 @@ export async function handler(request) {
   if (error?.message.includes("LOOKUP_CLOSED")) return response({ error: lookupClosedMessage }, 503);
   if (error?.message.includes("HOSTING_CLOSED")) return response(hostingClosed, 409);
   if (error?.message.includes("HOSTING_REQUIRED")) return hostingRequiredResponse(database);
+  if (error?.message.includes("PICKUP_CLOSED")) return response(pickupClosed, 409);
+  if (error?.message.includes("PICKUP_REQUIRED")) return pickupRequiredResponse(database);
+  if (error?.message.includes("INVALID_PICKUP")) return response({ error: "請檢查接機接待內容" }, 400);
   if (error?.message.includes("INVALID_HOSTING")) return response({ error: invalidHostingMessage }, 400);
   if (isInputError(error)) return response({ error: "請檢查登記資料" }, 400);
   if (error) {

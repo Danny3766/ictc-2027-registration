@@ -53,13 +53,14 @@ fieldset { padding: 0; border: 0; }
 .hosting-section > legend ~ * { clear: left; }
 .hosting-description { white-space: pre-line; }
 .hosting-question { margin: .5rem 0 0; }
+.pickup-question { font-weight: 700; }
+.pickup-survey { margin-top: 1rem; }
 .hosting-options { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; }
 .hosting-options label { display: flex; align-items: center; gap: .35rem; margin: .4rem 0; }
 .hosting-options input { width: auto; min-height: auto; margin: 0; }
 .hosting-details { margin: .5rem 0 0; padding: .25rem 0 .25rem 1rem; border-left: 3px solid #cfe0d7; }
 .hosting-details > label { margin: .75rem 0; }
-.hosting-details select, .hosting-pickup select { max-width: 12rem; display: block; }
-.hosting-pickup { display: block; margin: .75rem 0; }
+.hosting-details select, .pickup-details select { max-width: 12rem; display: block; }
 .event-note { white-space: pre-line; overflow-wrap: anywhere; }
 .hint { color: #59655f; font-size: .95rem; }
 .actions { display: grid; gap: .75rem; }

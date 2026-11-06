@@ -10,6 +10,7 @@ const files = new Map([
   ["/app.js", "app.js"],
   ["/success.js", "success.js"],
   ["/hosting.js", "hosting.js"],
+  ["/pickup.js", "pickup.js"],
   ["/meals.js", "meals.js"],
   ["/config.js", "config.js"],
   ["/admin/", "admin/index.html"],

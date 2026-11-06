@@ -36,6 +36,7 @@ const label = (group, value) => labels[group][value] ?? value;
 
 // registration_id is the hosting table's primary key, so the API embeds the one row as an object.
 const hostingOf = (registration) => Hosting.normalize(registration.registration_hosting);
+const pickupOf = (registration) => Pickup.normalize(registration.registration_pickup);
 const attends = (registration, activity) =>
   registration.registration_choices.some((choice) => choice.activity_id === activity.id && choice.attending);
 // What this person pays for the given activities, by their identity (general price until answered).
@@ -312,7 +313,7 @@ async function saveReference(event, kind) {
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
   if (form.dataset.editingId) data.id = form.dataset.editingId;
-  for (const name of ["is_registration_open", "is_lookup_open", "is_hosting_open", "is_published", "is_visible"]) {
+  for (const name of ["is_registration_open", "is_lookup_open", "is_hosting_open", "is_pickup_open", "is_published", "is_visible"]) {
     if (form.elements.namedItem(name)) data[name] = form.elements.namedItem(name).checked;
   }
   if (kind === "settings") data.registration_deadline_at = taipeiTimestamp(data.registration_deadline_at);
@@ -338,6 +339,8 @@ async function saveReference(event, kind) {
     && !confirm("確定開放登記？請先完成正式環境驗收與核准。")) return;
   if (kind === "hosting" && data.is_hosting_open && !reference.settings.is_hosting_open
     && !confirm("確定開放開家接待調查？公開登記頁與查詢頁將顯示接待區塊。")) return;
+  if (kind === "hosting" && data.is_pickup_open && !reference.settings.is_pickup_open
+    && !confirm("確定開放接機接待調查？公開登記頁與查詢頁將顯示接機問題。")) return;
   const edited = kind === "activity" && reference.activities.find((item) => String(item.id) === form.dataset.editingId);
   if (edited && data.audience === "hosting" && edited.audience !== "hosting") {
     // People who signed up before the restriction keep their answer until their next save.
@@ -508,15 +511,13 @@ function districtActivityCard(district, people, activities) {
 function showHostingStatistics(registrations) {
   const answers = { hosting: 0, not_hosting: 0, family_registered: 0, unanswered: 0 };
   const capacity = Object.fromEntries(Object.keys(Hosting.guestLabels).map((type) => [type, { registrations: 0, people: 0 }]));
-  const pickup = { registrations: 0, people: 0 };
+  const pickup = { yes: 0, no: 0, unanswered: 0, people: 0 };
   for (const registration of registrations) {
     const answer = hostingOf(registration);
     answers[answer?.status ?? "unanswered"] += 1;
-    // Pickup is asked of everyone who answered, whatever the status.
-    if (answer?.pickup_count) {
-      pickup.registrations += 1;
-      pickup.people += answer.pickup_count;
-    }
+    const pickupAnswer = pickupOf(registration);
+    pickup[pickupAnswer?.status ?? "unanswered"] += 1;
+    pickup.people += pickupAnswer?.count ?? 0;
     if (answer?.status !== "hosting") continue;
     capacity[answer.guest_type].registrations += 1;
     capacity[answer.guest_type].people += answer.guest_count;
@@ -537,9 +538,14 @@ function showHostingStatistics(registrations) {
     capacityRows.append(row);
   }
   totalRow(capacityRows, [answers.hosting, Object.values(capacity).reduce((sum, item) => sum + item.people, 0)]);
-  const pickupRow = document.createElement("tr");
-  for (const value of ["可配搭接機", pickup.registrations, pickup.people]) cell(pickupRow, value);
-  document.querySelector("#hosting-pickup-stats-rows").replaceChildren(pickupRow);
+  const pickupRows = document.querySelector("#hosting-pickup-stats-rows");
+  pickupRows.replaceChildren();
+  for (const [status, count] of [["是", pickup.yes], ["否", pickup.no], ["未回覆", pickup.unanswered]]) {
+    const row = document.createElement("tr");
+    for (const value of [status, count, status === "是" ? pickup.people : 0]) cell(row, value);
+    pickupRows.append(row);
+  }
+  totalRow(pickupRows, [registrations.length, pickup.people]);
 }
 
 function csvCell(value) {
@@ -552,17 +558,18 @@ async function downloadCsv() {
   const activities = currentActivities();
   const districts = new Map(reference.districts.map((item) => [item.id, item.name]));
   const rows = [["流水號", "姓名", "區", "匯入狀態", ...activities.map((item) => item.title),
-    "開家接待", "接待對象", "可接待人數", "可接機人數", "用餐身分", "預估應付餐費"]];
+    "開家接待", "接待對象", "可接待人數", "是否可以接機", "可接機人數", "用餐身分", "預估應付餐費"]];
   for (const registration of activeRegistrations(await allRegistrations())) {
     const choices = new Map(registration.registration_choices.map((item) => [item.activity_id, item.attending]));
     const hosting = hostingOf(registration);
+    const pickup = pickupOf(registration);
     rows.push([
       registration.serial_no, registration.full_name, districts.get(registration.district_id),
       label("import", registration.import_status),
       ...activities.map((item) => !choices.has(item.id) ? "未回覆" : choices.get(item.id) ? "參加" : "不參加"),
       hosting ? Hosting.statusLabels[hosting.status] : "未回覆",
       hosting?.guest_type ? Hosting.guestLabels[hosting.guest_type] : "",
-      hosting?.guest_count ?? "", hosting?.pickup_count ?? "",
+      hosting?.guest_count ?? "", pickup ? Pickup.labels[pickup.status] : "", pickup?.count ?? "",
       identityText(registration, activities), mealFee(registration, activities),
     ]);
   }
@@ -632,13 +639,10 @@ function renderNewRegistrationForm() {
   const choices = new Map(choicesFromForm(form).map((item) => [item.activity_id, item.attending]));
   renderChoiceFields(document.querySelector("#new-registration-choices"), choices, true, Meals.readIdentity(form));
   const hosting = document.querySelector("#new-registration-hosting");
-  // read() is null until the first question is answered, but pickup may already be chosen (open survey).
-  const pickup = hosting.querySelector('[name="pickup_count"]')?.value;
   // Required only while the public survey is open, matching the public form.
   Hosting.render(hosting, Hosting.read(hosting), Boolean(reference.settings.is_hosting_open));
-  // A closed survey disables pickup until an answer; a kept value would show but not be saved.
-  const pickupSelect = hosting.querySelector('[name="pickup_count"]');
-  if (pickup && !pickupSelect.disabled) pickupSelect.value = pickup;
+  const pickup = document.querySelector("#new-registration-pickup");
+  Pickup.render(pickup, Pickup.read(pickup), Boolean(reference.settings.is_pickup_open));
   syncNewMeals();
 }
 
@@ -680,6 +684,7 @@ function openRegistration(registration, editing = false) {
   const hosting = hostingOf(registration);
   const hostingFields = document.querySelector("#detail-hosting");
   Hosting.render(hostingFields, hosting, hosting !== null);
+  Pickup.render(document.querySelector("#detail-pickup"), pickupOf(registration), pickupOf(registration) !== null);
   // The fieldset disables every hosting control, whatever its tag; sync() cannot re-enable them.
   hostingFields.closest("fieldset").disabled = !editingRegistration;
   // In view mode sync() does not run, so show the stored identity whenever the choices need one.
@@ -1040,6 +1045,7 @@ document.querySelector("#edit-registration-form").addEventListener("submit", asy
       registration_id: selectedRegistration.id, full_name: data.get("full_name"),
       district_id: Number(data.get("district_id")), choices,
       hosting: Hosting.read(document.querySelector("#detail-hosting")),
+      pickup: Pickup.read(document.querySelector("#detail-pickup")),
       meal_identity: Meals.readIdentity(document.querySelector("#detail-choices")),
     });
     await refreshRegistration();
@@ -1077,6 +1083,7 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
       full_name: data.get("full_name"), district_id: Number(data.get("district_id")),
       choices: choicesFromForm(form),
       hosting: Hosting.read(document.querySelector("#new-registration-hosting")),
+      pickup: Pickup.read(document.querySelector("#new-registration-pickup")),
       meal_identity: Meals.readIdentity(document.querySelector("#new-registration-choices")),
     });
     newRegistrationRequestId = crypto.randomUUID();
@@ -1088,9 +1095,8 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
     await loadRegistrations();
     showMessage("協助登記已建立。");
   } catch (error) {
-    if (error.code === "HOSTING_REQUIRED") {
-      // An admin opened hosting after this page loaded; mark the answer required and keep the input.
-      reference.settings.is_hosting_open = true;
+    if (["HOSTING_REQUIRED", "PICKUP_REQUIRED"].includes(error.code)) {
+      reference.settings[error.code === "HOSTING_REQUIRED" ? "is_hosting_open" : "is_pickup_open"] = true;
       renderNewRegistrationForm();
     }
     showMessage(error.message, true);

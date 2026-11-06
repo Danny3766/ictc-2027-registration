@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="./staff.css" />
     <script src="../config.js"></script>
     <script src="../hosting.js" defer></script>
+    <script src="../pickup.js" defer></script>
     <script src="../meals.js" defer></script>
     <script src="./staff.js" defer></script>
   </head>
@@ -72,7 +73,7 @@
                   <label>姓名<input name="full_name" maxlength="100" required /></label>
                   <label>區<select name="district_id" required></select></label>
                 </div>
-                <fieldset class="hosting-panel"><legend>開家接待</legend><div id="detail-hosting"></div></fieldset>
+                <fieldset class="hosting-panel"><legend>開家接待與接機接待</legend><div id="detail-hosting"></div><div id="detail-pickup"></div></fieldset>
               </div>
               <fieldset class="activity-panel"><legend>公開活動選擇</legend><div id="detail-choices"></div></fieldset>
             </div>
@@ -109,7 +110,7 @@
                   <label>姓名<input name="full_name" maxlength="100" required /></label>
                   <label>區<select name="district_id" required></select></label>
                 </div>
-                <fieldset class="hosting-panel"><legend>開家接待</legend><div id="new-registration-hosting"></div></fieldset>
+                <fieldset class="hosting-panel"><legend>開家接待與接機接待</legend><div id="new-registration-hosting"></div><div id="new-registration-pickup"></div></fieldset>
               </div>
               <fieldset class="activity-panel"><legend>公開活動選擇</legend><div id="new-registration-choices"></div></fieldset>
             </div>
@@ -203,7 +204,7 @@
         </section>
 
         <section id="admin-hosting" class="card" hidden>
-          <h2>開家接待設定</h2>
+          <h2>開家與接機接待設定</h2>
           <form id="hosting-settings-form" class="staff-form registration-form">
             <div class="registration-columns registration-split">
               <div class="registration-main">
@@ -212,7 +213,14 @@
               </div>
               <label>說明文字（顯示在公開頁接待區塊上方，例如接待期間；請勿填寫個人聯絡資料）<textarea name="hosting_description" maxlength="2000"></textarea></label>
             </div>
-            <button type="submit">儲存開家接待設定</button>
+            <div class="registration-columns registration-split">
+              <div class="registration-main">
+                <label class="check"><input name="is_pickup_open" type="checkbox" /> 開放接機接待調查</label>
+                <p class="hint">接機與開家分別開放；同一台車只需一人填寫可接機位數。</p>
+              </div>
+              <label>接機說明文字（顯示在公開頁接機題目上方；請勿填寫個人聯絡資料）<textarea name="pickup_description" maxlength="2000"></textarea></label>
+            </div>
+            <button type="submit">儲存接待設定</button>
           </form>
         </section>
 

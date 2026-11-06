@@ -163,7 +163,7 @@ export async function handler(request) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }
     let query = database.from("registrations")
-      .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),meal_identity,registration_hosting(status,guest_type,guest_count,pickup_count)",
+      .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),meal_identity,registration_hosting(status,guest_type,guest_count),registration_pickup(status,count)",
         beforeSerial === null ? { count: "exact" } : undefined)
       .order("serial_no", { ascending: false });
     // 10 rows a page, matching REGISTRATIONS_PER_PAGE in site/admin/staff.js.
@@ -185,7 +185,7 @@ export async function handler(request) {
 
   if (body.action === "list_reference") {
     const [settings, districts, activities, program] = await Promise.all([
-      database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_lookup_open,is_hosting_open,hosting_description").single(),
+      database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_lookup_open,is_hosting_open,hosting_description,is_pickup_open,pickup_description").single(),
       database.from("districts").select("id,name,sort_order").order("sort_order"),
       database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,student_fee_amount,cost_amount,audience,audience_note,is_published,sort_order").order("sort_order"),
       database.from("program_items").select("id,event_date,start_time,end_time,title,note,sort_order,is_visible").order("sort_order"),
@@ -201,10 +201,10 @@ export async function handler(request) {
     if (!isUuid(body.registration_id)) return response({ error: "INVALID_REQUEST" }, 400);
     if (!validMealIdentity(body.meal_identity)) return response({ error: "請檢查用餐身分" }, 400);
     const operation = {
-      save_registration: ["staff_update_registration", {
+      save_registration: ["staff_update_registration_with_pickup", {
         p_registration_id: body.registration_id, p_full_name: body.full_name,
         p_district_id: body.district_id, p_choices: body.choices, p_hosting: body.hosting ?? null,
-        p_meal_identity: body.meal_identity ?? null,
+        p_meal_identity: body.meal_identity ?? null, p_pickup: body.pickup ?? null,
       }],
       set_import_status: ["staff_set_import_status", {
         p_registration_id: body.registration_id, p_status: body.status,
@@ -221,6 +221,7 @@ export async function handler(request) {
       if (error.message?.includes("ALREADY_VOID")) return response({ error: "此紀錄已作廢" }, 409);
       if (error.message?.includes("NAME_TAKEN")) return response({ error: "此姓名與區已有有效登記" }, 409);
       if (error.message?.includes("INVALID_HOSTING")) return response({ error: "請檢查開家接待內容" }, 400);
+      if (error.message?.includes("INVALID_PICKUP")) return response({ error: "請檢查接機接待內容" }, 400);
       if (error.message?.includes("INVALID_VOID_REASON")) return response({ error: "請填寫作廢原因（200 字以內）" }, 400);
       if (isInputError(error)) return response({ error: "請檢查資料與活動選擇" }, 400);
       console.error("Failed staff registration operation", error);
@@ -233,10 +234,10 @@ export async function handler(request) {
   if (body.action === "create_registration") {
     if (!isUuid(body.create_request_id)) return response({ error: "INVALID_REQUEST" }, 400);
     if (!validMealIdentity(body.meal_identity)) return response({ error: "請檢查用餐身分" }, 400);
-    const { data, error } = await database.rpc("staff_create_registration", {
+    const { data, error } = await database.rpc("staff_create_registration_with_pickup", {
       p_actor: profile.auth_user_id, p_request_id: body.create_request_id,
       p_full_name: body.full_name, p_district_id: body.district_id, p_choices: body.choices,
-      p_hosting: body.hosting ?? null, p_meal_identity: body.meal_identity ?? null,
+      p_hosting: body.hosting ?? null, p_meal_identity: body.meal_identity ?? null, p_pickup: body.pickup ?? null,
     });
     if (!error && data?.length === 1) return response({ serial_no: data[0].serial_no }, 201);
     if (error?.message?.includes("DUPLICATE_REQUEST")) return response({ error: "此協助登記已建立，請重新整理名單確認" }, 409);
@@ -247,7 +248,11 @@ export async function handler(request) {
     if (error?.message?.includes("HOSTING_REQUIRED")) {
       return response({ error: "開家接待調查已開放，請回答開家接待後再建立協助登記；看不到接待欄位時請重新整理頁面", code: "HOSTING_REQUIRED" }, 409);
     }
+    if (error?.message?.includes("PICKUP_REQUIRED")) {
+      return response({ error: "接機接待調查已開放，請回答是否可以接機後再建立協助登記", code: "PICKUP_REQUIRED" }, 409);
+    }
     if (error?.message?.includes("INVALID_HOSTING")) return response({ error: "請檢查開家接待內容" }, 400);
+    if (error?.message?.includes("INVALID_PICKUP")) return response({ error: "請檢查接機接待內容" }, 400);
     if (isInputError(error)) return response({ error: "請檢查登記資料" }, 400);
     console.error("Failed to create staff registration", error);
     return response({ error: "協助登記失敗，請稍後再試" }, 503);
@@ -279,7 +284,7 @@ export async function handler(request) {
       || !body.data || typeof body.data !== "object" || Array.isArray(body.data)) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }
-    const { data, error } = await database.rpc("staff_save_reference", {
+    const { data, error } = await database.rpc(body.kind === "hosting" ? "staff_save_reception_settings" : "staff_save_reference", {
       p_actor: profile.auth_user_id, p_kind: body.kind, p_data: body.data,
     });
     if (error) {

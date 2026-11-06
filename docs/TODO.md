@@ -301,3 +301,8 @@ Q43 已確認。
 - 公開操作經 Edge Function；狀態轉換使用受控 RPC／服務端流程。
 - 第一個垂直切片包含 schema、RLS、建立、完成、查詢、修改及測試；本次公開前還須完成後台。
 - 手機優先，測近期 Chrome、Edge 與 Safari；不設 WCAG 驗收項目。
+
+## 本次新增必要範圍：接機接待獨立調查
+
+- [ ] 測試站依序：套用 `202611060001_independent_pickup.sql`，再部署 `registration` 與 `staff` Edge Function（會呼叫 `*_with_pickup` RPC、讀 `registration_pickup`，不能早於 migration），最後部署前端（舊版 Edge Function 會丟掉 `pickup`）；三步之間若開家接待開放，舊頁面送出的接機人數只寫入舊欄位，因此部署期間先關閉開家接待或連續完成三步。套用後在 SQL Editor 執行 `supabase/testing/verify-independent-pickup.sql`。
+- [ ] 確認既有接機人數 1～6 轉為「是」、0 轉為未回覆；兩個 Edge Function 都更新後，新增 migration 刪除 `registration_hosting.pickup_count`。
