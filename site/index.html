@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="./styles.css" />
     <script src="./config.js"></script>
     <script src="./hosting.js" defer></script>
+    <script src="./pickup.js" defer></script>
     <script src="./meals.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
@@ -56,10 +57,17 @@
             >
           </div>
           <fieldset id="hosting-section" class="hosting-section" hidden>
-            <legend>開家接待</legend>
-            <p class="hint hosting-description" hidden></p>
-            <p class="hint">同一家只需一人登記開家接待，其他家人請選「家人已登記開家接待」。</p>
-            <div id="hosting-fields"></div>
+            <legend>開家接待與接機接待</legend>
+            <div class="hosting-survey">
+              <p class="hosting-question"><strong>開家接待</strong></p>
+              <p class="hint hosting-description" hidden></p>
+              <p class="hint">同一家只需一人登記開家接待，其他家人請選「家人已登記開家接待」。</p>
+              <div id="hosting-fields"></div>
+            </div>
+            <div class="pickup-survey">
+              <p class="hint pickup-description" hidden></p>
+              <div id="pickup-fields"></div>
+            </div>
           </fieldset>
           <fieldset>
             <legend>活動選擇</legend>
@@ -88,9 +96,11 @@
           <p class="hint">姓名或區需要更正時，請聯絡服事者。</p>
           <p id="edit-mode-hint" class="hint" hidden>正在修改登記內容。</p>
           <fieldset id="edit-hosting-section" class="hosting-section" hidden>
-            <legend>開家接待</legend>
+            <legend>開家接待與接機接待</legend>
             <p class="hint hosting-description" hidden></p>
+            <p class="hint pickup-description" hidden></p>
             <div id="edit-hosting"></div>
+            <div id="edit-pickup"></div>
           </fieldset>
           <fieldset>
             <legend>活動選擇</legend>
