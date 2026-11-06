@@ -88,16 +88,16 @@
 每次開發都使用以下流程：
 
 ```text
-feature branch
-    ↓
-共用測試分支
-    ↓
-main（正式環境，由 GitHub Pages 部署）
+feat/*（功能開發）
+    ↓ PR
+develop（整合，原名 feat/ver-001；上線後不部署）
+    ↓ PR
+main（正式環境，唯一由 GitHub Pages 部署的分支）
 ```
 
-- `feature branch` 完成並測試後合併至共用測試分支。
-- 測試分支驗收後才合併至 `main`。
-- 測試期間共用同一 GitHub Pages 網址；正式上線時將 Pages workflow 改為只部署 `main`，核對最後部署來源與正式 Supabase 設定。
+- `feat/*` 從 `develop` 建立，完成並測試後開 PR 合併至 `develop`。
+- `develop` 驗收後開 PR 合併至 `main`。不經過 `feat/ver-001-main` 這類中轉分支。
+- 上線後 `pages.yml` 與 `github-pages` 部署環境都只允許 `main`；測試改用本機 `npm start`，需要遠端試用時另開獨立測試站。細節見 [正式環境設定流程](正式環境setup.md) 第 9 節。
 - 部署 artifact 只包含網站成品，不包含 SQL、測試、`node_modules`、規劃文件或 secrets。
 
 ## Supabase 建置 wizard
@@ -316,3 +316,12 @@ Q43 已確認。
 - [ ] 測試站依序套用 `202611060002_activity_audiences.sql`，再部署 `registration` 與 `staff` Edge Function，最後部署前端；於 SQL Editor 執行 `supabase/testing/verify-activity-audiences.sql`。若前一版 `202611060001` 尚未套用，須先完成其部署順序。
 - [ ] 驗收後台單選清單含接機及實際活動（未公開者有標示、不含自己），無法形成循環；驗收接機回答是才符合資格、前置活動須已公開且勾選參加、取消後依賴活動退回不參加、同畫面重選後恢復；限定對象提示留空不顯示。
 - [ ] 確認週五晚間帶菜愛筵沿用原活動 ID 與答案，週五活動已存在時不重複改名；時間與地點由管理員確認後設定，不自動填入。
+
+## 本次新增必要範圍：正式站上線準備
+
+- [x] 本機完成：`202611060003_revoke_default_api_grants.sql` 撤銷 Supabase 預設給 `anon`、`authenticated` 的資料表、序列與函式權限，只保留原本刻意開放的公開讀取，並停止新物件自動授權。在模擬 Supabase 預設權限的本機資料庫驗證：私有資料表匿名不可讀、函式匿名不可執行；四支 `supabase/testing` 驗證以 `service_role` 執行通過。
+- [x] 本機完成：`supabase/production/baseline_202611060003.sql` 依序串接 16 支 migration 成單一交易，與逐支執行比對結構、權限與初始資料完全一致。
+- [x] `pages.yml` 只由 `main` 觸發；分支與發布規則寫入 [正式環境設定流程](正式環境setup.md) 第 7、9 節。
+- [ ] 測試專案套用 `202611060003_revoke_default_api_grants.sql`（不需重新部署 Edge Function），以[正式環境設定流程](正式環境setup.md) 8-2 查詢確認私有表 `anon_can_read` 全為 `false`，並在本機連測試 Supabase 做一次登記、查詢與後台 smoke test。
+- [ ] `feat/ver-001` 改名為 `develop`，刪除 `feat/ver-001-main`。
+- [ ] 依[正式環境設定流程](正式環境setup.md) 第 1～8 節建立正式站：Auth、管理員、baseline、`staff_profiles`、Edge Function、GitHub Variables、部署環境只允許 `main`、第一次接合 `main` 並開上線 PR、部署後核對。

@@ -2,7 +2,9 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: [feat/ver-001, main]
+    # Only main: every branch deploys to the same Pages URL, so any other branch would replace the
+    # production site with the test configuration. Test locally, or on a separate test site.
+    branches: [main]
   workflow_dispatch:
 
 permissions:
