@@ -314,24 +314,37 @@ test("editing an old registration leaves a newer activity unanswered", async ({ 
 
 test("statistics show one card per district, with its activities and a district total", async ({ page }) => {
   const reference = twoActivities.list_reference().json;
-  await mockStaff(page, "staff", () => {}, "測試登記", { list_reference: () => ({ json: {
-    ...reference, districts: [...reference.districts, { id: 2, name: "測試二區", sort_order: 2 }],
-  } }) });
+  const registration = (id, districtId, choices) => ({ id, serial_no: Number(id.at(-1)), full_name: "測試登記",
+    district_id: districtId, record_status: "active", import_status: "pending", registration_choices: choices,
+    updated_at: "2026-11-04T00:00:00Z" });
+  await mockStaff(page, "staff", () => {}, "測試登記", {
+    list_reference: () => ({ json: { ...reference, districts: [...reference.districts,
+      { id: 2, name: "測試二區", sort_order: 2 }, { id: 3, name: "測試三區", sort_order: 3 }] } }),
+    list_registrations: () => ({ json: { count: 2, registrations: [
+      registration("223e4567-e89b-42d3-a456-426614174002", 3,
+        [{ activity_id: 1, attending: true }, { activity_id: 2, attending: false }]),
+      registration("223e4567-e89b-42d3-a456-426614174001", 1, [{ activity_id: 1, attending: false }]),
+    ] } }),
+  });
   await login(page);
   await page.getByRole("button", { name: "更新統計" }).click();
   const cards = page.locator("#district-activity-cards > .mini-card");
-  await expect(cards).toHaveCount(2);
-  await expect(cards.nth(0).locator("h3")).toHaveText("林森 有效登記 1 人");
-  await expect(cards.nth(0).locator("thead th")).toHaveText(["活動", "參加", "不參加", "未回覆"]);
+  await expect(cards).toHaveCount(4);
+  // 全會所 comes first and adds up every district (林森 and 測試三區 here).
+  await expect(cards.nth(0).locator("h3")).toHaveText("全會所 有效登記 2 人");
+  await expect(cards.nth(0).locator("tbody tr td")).toHaveText(["測試聚會", "1", "1", "0", "新增活動", "0", "1", "1"]);
+  await expect(cards.nth(3).locator("h3")).toHaveText("測試三區 有效登記 1 人");
+  await expect(cards.nth(1).locator("h3")).toHaveText("林森 有效登記 1 人");
+  await expect(cards.nth(1).locator("thead th")).toHaveText(["活動", "參加", "不參加", "未回覆"]);
   // No 合計 row: one person attends several activities, so a sum would count them twice.
-  const rows = cards.nth(0).locator("tbody tr");
+  const rows = cards.nth(1).locator("tbody tr");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0).locator("td")).toHaveText(["測試聚會", "0", "1", "0"]);
   await expect(rows.nth(1).locator("td")).toHaveText(["新增活動", "0", "0", "1"]);
   // A district nobody has signed up from still shows, with zeros.
-  await expect(cards.nth(1).locator("h3")).toHaveText("測試二區 有效登記 0 人");
-  await expect(cards.nth(1).locator("tbody tr").nth(0).locator("td")).toHaveText(["測試聚會", "0", "0", "0"]);
-  await expect(page.locator("#district-stats-rows tr.total td")).toHaveText(["合計", "1", "NT$0"]);
+  await expect(cards.nth(2).locator("h3")).toHaveText("測試二區 有效登記 0 人");
+  await expect(cards.nth(2).locator("tbody tr").nth(0).locator("td")).toHaveText(["測試聚會", "0", "0", "0"]);
+  await expect(page.locator("#district-stats-rows tr.total td")).toHaveText(["合計", "2", "NT$0"]);
 });
 
 test("voiding a registration requires a reason and sends it", async ({ page }) => {
@@ -803,7 +816,7 @@ test("statistics CSV includes the visible sections and omits the family hosting 
   expect(csv).not.toContain("家人已登記開家接待");
   expect(csv).toContain('"接待對象"\r\n"接待對象","登記數","人數"');
   expect(csv).toContain('"接機"\r\n"接機","登記數","可載人數"');
-  expect(csv).toContain('"各區各活動"\r\n\r\n"林森 有效登記 4 人"\r\n"活動","參加","不參加","未回覆"\r\n"測試聚會","2","2","0"');
+  expect(csv).toContain('"各區各活動"\r\n\r\n"全會所 有效登記 4 人"\r\n"活動","參加","不參加","未回覆"\r\n"測試聚會","2","2","0"\r\n\r\n"林森 有效登記 4 人"');
   await expect(page.locator("#stats-rows tr")).toHaveCount(1);
 });
 
@@ -1212,7 +1225,7 @@ test("admin forms and statistics are compact: fields share rows on wide screens 
   expect(await sameRow("#section-stats .stat-cards > :nth-child(1)", "#section-stats .stat-cards > :nth-child(2)")).toBe(wide);
   // Every statistics card fits its table without a sideways scroll bar (the 接機 card had one).
   await page.getByRole("button", { name: "更新統計" }).click();
-  await expect(page.locator("#district-activity-cards > .mini-card")).toHaveCount(1);
+  await expect(page.locator("#district-activity-cards > .mini-card")).toHaveCount(2);
   expect(await page.locator("#section-stats .stat-cards .table-scroll").evaluateAll((boxes) => boxes
     .filter((box) => box.scrollWidth > box.clientWidth).map((box) => box.closest(".mini-card").querySelector("h3").textContent))).toEqual([]);
   // 修改帳號 and 設定密碼 are two cards side by side.

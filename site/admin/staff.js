@@ -482,8 +482,8 @@ async function showStatistics() {
   const districtRows = document.querySelector("#district-stats-rows");
   districtRows.replaceChildren();
   const districtTotal = { people: 0, fee: 0 };
-  // One card per district; the card has no 合計 row, since adding activities would count a person twice.
-  const districtCards = [];
+  // A 全會所 card, then one per district; no 合計 row, since adding activities would count a person twice.
+  const districtCards = [districtActivityCard({ name: "全會所" }, registrations, activities)];
   for (const district of reference.districts) {
     const people = registrations.filter((item) => item.district_id === district.id);
     const fee = people.reduce((sum, person) => sum + mealFee(person, activities), 0);
