@@ -2,13 +2,22 @@
 // same rules (registration_meal_identity, registration_audience_valid); this only keeps the form in step.
 const Meals = (() => {
   const identityLabels = { general: "一般", student: "學生" };
-  const defaultAudienceNote = "本項優先開放有開家接待的聖徒報名";
   const revertedNote = "不符報名對象，已改為不參加。";
   // 是 and 家人已登記開家接待 both count as a hosting household.
   const hostingStatuses = ["hosting", "family_registered"];
 
   const hasStudentPrice = (activity) => activity.student_fee_amount != null;
-  const eligible = (activity, hostingStatus) => activity.audience !== "hosting" || hostingStatuses.includes(hostingStatus);
+  const eligible = (activity, context = {}) => {
+    const audience = activity.audience ?? "all";
+    if (audience === "all") return true;
+    if (audience === "hosting") return hostingStatuses.includes(context.hostingStatus);
+    if (audience === "pickup") return context.pickupStatus === "yes";
+    if (!audience.startsWith("activity:")) return false;
+    const requiredId = Number(audience.slice(9));
+    const prerequisite = context.activities?.find((item) => item.id === requiredId);
+    return Boolean(prerequisite && prerequisite.is_published !== false
+      && context.choices?.some((choice) => choice.activity_id === requiredId && choice.attending));
+  };
   // Without an answered identity the general price applies, like the back-office estimate.
   const fee = (activity, identity) =>
     (identity === "student" && hasStudentPrice(activity) ? activity.student_fee_amount : activity.fee_amount) ?? 0;
@@ -34,17 +43,19 @@ const Meals = (() => {
   function render(container, activities, identity = null) {
     for (const activity of activities) {
       const wrapper = container.querySelector(`[data-activity="${activity.id}"]`);
-      if (!wrapper || activity.audience !== "hosting") continue;
-      const note = document.createElement("p");
-      note.className = "hint audience-note";
-      note.textContent = activity.audience_note || defaultAudienceNote;
+      if (!wrapper || !activity.audience || activity.audience === "all") continue;
       const reverted = document.createElement("p");
       reverted.className = "hint audience-reverted";
       reverted.textContent = revertedNote;
       reverted.hidden = true;
       // On the public page the note sits to the right of 參加／不參加 (wrapping below on narrow screens);
       // the back office has no options row, so it stays on its own line there.
-      (wrapper.querySelector(".activity-options") ?? wrapper).append(note);
+      if (activity.audience_note?.trim()) {
+        const note = document.createElement("p");
+        note.className = "hint audience-note";
+        note.textContent = activity.audience_note;
+        (wrapper.querySelector(".activity-options") ?? wrapper).append(note);
+      }
       wrapper.append(reverted);
     }
     if (!activities.some(hasStudentPrice)) return;
@@ -74,29 +85,36 @@ const Meals = (() => {
     container.append(block);
   }
 
-  // Applies the rules for the current 開家接待 status (null = no answer): a restricted activity is
+  // Applies the current audience answers: a restricted activity is
   // 不參加 and locked outside its audience, and the identity question shows, required, only while a
   // student-priced activity is attended. Hidden or locked fields are disabled, so the form's own checks
   // skip them; read choices with choices() below, since FormData leaves disabled fields out.
   // A 參加 reverted here comes back if the answer becomes eligible again on the same screen.
-  function sync(container, activities, hostingStatus) {
-    for (const activity of activities) {
-      if (activity.audience !== "hosting") continue;
-      const yes = radio(container, activity, "true");
-      const no = radio(container, activity, "false");
-      if (!yes || !no) continue;
-      const allowed = eligible(activity, hostingStatus);
-      const note = container.querySelector(`[data-activity="${activity.id}"] .audience-reverted`);
-      if (!allowed && yes.checked) yes.dataset.reverted = "";
-      if (allowed && yes.dataset.reverted !== undefined) {
-        if (no.checked) yes.checked = true;
-        delete yes.dataset.reverted;
+  function sync(container, activities, context = {}) {
+    // A prerequisite can appear after its dependent activity. Repeat until the choices settle.
+    for (let pass = 0; pass <= activities.length; pass++) {
+      let changed = false;
+      for (const activity of activities) {
+        if (!activity.audience || activity.audience === "all") continue;
+        const yes = radio(container, activity, "true");
+        const no = radio(container, activity, "false");
+        if (!yes || !no) continue;
+        const wasYes = yes.checked;
+        const allowed = eligible(activity, { ...context, activities, choices: choices(container, activities) });
+        const note = container.querySelector(`[data-activity="${activity.id}"] .audience-reverted`);
+        if (!allowed && yes.checked) yes.dataset.reverted = "";
+        if (allowed && yes.dataset.reverted !== undefined) {
+          if (no.checked) yes.checked = true;
+          delete yes.dataset.reverted;
+        }
+        if (note) note.hidden = yes.dataset.reverted === undefined;
+        // A required question gets 不參加 so the form can be sent; an optional one left 未回覆 (an older
+        // registration in the back office) stays unanswered, so saving it changes nothing.
+        if (!allowed && (yes.checked || yes.required)) no.checked = true;
+        yes.disabled = no.disabled = !allowed;
+        if (yes.checked !== wasYes) changed = true;
       }
-      if (note) note.hidden = yes.dataset.reverted === undefined;
-      // A required question gets 不參加 so the form can be sent; an optional one left 未回覆 (an older
-      // registration in the back office) stays unanswered, so saving it changes nothing.
-      if (!allowed && (yes.checked || yes.required)) no.checked = true;
-      yes.disabled = no.disabled = !allowed;
+      if (!changed) break;
     }
     const block = container.querySelector(".meal-identity");
     if (!block) return;
