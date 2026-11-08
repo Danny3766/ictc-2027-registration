@@ -835,6 +835,112 @@ test("the registration list shows 10 rows a page and names the import column 匯
   expect(pages).toEqual([0, 1]);
 });
 
+test("the registration list filters by 區 together with the name, keeps both while paging, and 清除條件 clears them", async ({ page }) => {
+  const lists = [];
+  let failNext = false;
+  await mockStaff(page, "staff", () => {}, "測試登記", {
+    list_reference: () => ({ json: {
+      settings: { event_name: "測試", is_registration_open: false },
+      districts: [{ id: 1, name: "林森", sort_order: 1 }, { id: 2, name: "第二區", sort_order: 2 }],
+      activities: [], program: [],
+    } }),
+    list_registrations: (payload) => {
+      // before_serial requests are the full export for statistics, not the paged list.
+      if (payload.before_serial !== undefined) return { json: { registrations: [] } };
+      lists.push(payload);
+      if (failNext) {
+        failNext = false;
+        return { status: 503, json: { error: "名單載入失敗" } };
+      }
+      return { json: { count: 11, registrations: [] } };
+    },
+  });
+  await login(page);
+  const form = page.locator("#search-form");
+  const name = form.locator('input[name="search"]');
+  const district = form.locator('select[name="district_id"]');
+  const clear = page.getByRole("button", { name: "清除條件" });
+  await expect(district.locator("option")).toHaveText(["全部區", "林森", "第二區"]);
+  await expect(clear).toBeDisabled();
+  // A typed name is enough to clear, before 搜尋.
+  await name.fill("王");
+  await expect(clear).toBeEnabled();
+  await district.selectOption({ label: "第二區" });
+  await page.getByRole("button", { name: "搜尋" }).click();
+  await expect.poll(() => lists.length).toBe(2);
+  await page.locator("#next-page").click();
+  await expect(page.locator("#page-number")).toHaveText("第 2 頁");
+  expect(lists).toEqual([
+    { action: "list_registrations", page: 0, search: "" },
+    { action: "list_registrations", page: 0, search: "王", district_id: 2 },
+    { action: "list_registrations", page: 1, search: "王", district_id: 2 },
+  ]);
+
+  // A failed load keeps the conditions from before 清除條件, in the fields and on the list.
+  failNext = true;
+  await clear.click();
+  await expect(page.locator("#message")).toHaveText("名單載入失敗");
+  await page.locator("#message-close").click();
+  await expect(name).toHaveValue("王");
+  await expect(district).toHaveValue("2");
+  await expect(page.locator("#page-number")).toHaveText("第 2 頁");
+
+  // Emptied fields leave the applied filter on the list, so 清除條件 stays usable.
+  await name.fill("");
+  await district.selectOption({ label: "全部區" });
+  await expect(clear).toBeEnabled();
+  await clear.click();
+  await expect(page.locator("#page-number")).toHaveText("第 1 頁");
+  expect(lists.at(-1)).toEqual({ action: "list_registrations", page: 0, search: "" });
+  await expect(clear).toBeDisabled();
+
+  // 登出 clears the conditions for the next login on the same page.
+  await name.fill("王");
+  await district.selectOption({ label: "第二區" });
+  await page.getByRole("button", { name: "搜尋" }).click();
+  await expect.poll(() => lists.at(-1).district_id).toBe(2);
+  await page.getByRole("button", { name: "登出" }).click();
+  await page.locator('#login-form input[name="username"]').fill("tester");
+  await page.locator('#login-form input[name="password"]').fill("test-password");
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect.poll(() => lists.at(-1)).toEqual({ action: "list_registrations", page: 0, search: "" });
+  await expect(name).toHaveValue("");
+  await expect(district).toHaveValue("");
+  await expect(clear).toBeDisabled();
+  // A chosen 區 alone is also enough to clear, before 搜尋.
+  await district.selectOption({ label: "林森" });
+  await expect(clear).toBeEnabled();
+});
+
+test("an expired login while paging a 區 search does not hand the conditions to the next login", async ({ page }) => {
+  const lists = [];
+  await mockStaff(page, "staff", () => {}, "測試登記", {
+    list_registrations: (payload) => {
+      if (payload.before_serial !== undefined) return { json: { registrations: [] } };
+      lists.push(payload);
+      // The search works; the next page meets an expired login, while the search is the applied condition.
+      if (payload.page === 1) return { status: 401, json: { error: "登入已過期，請重新登入" } };
+      return { json: { count: 11, registrations: [] } };
+    },
+  });
+  await login(page);
+  const form = page.locator("#search-form");
+  await form.locator('input[name="search"]').fill("王");
+  await form.locator('select[name="district_id"]').selectOption({ label: "林森" });
+  await page.getByRole("button", { name: "搜尋" }).click();
+  await expect.poll(() => lists.length).toBe(2);
+  await page.locator("#next-page").click();
+  await expect(page.locator("#login-panel")).toBeVisible();
+  await page.locator('#login-form input[name="username"]').fill("tester");
+  await page.locator('#login-form input[name="password"]').fill("test-password");
+  await page.getByRole("button", { name: "登入" }).click();
+  await expect.poll(() => lists.length).toBe(4);
+  expect(lists.at(-1)).toEqual({ action: "list_registrations", page: 0, search: "" });
+  await expect(form.locator('input[name="search"]')).toHaveValue("");
+  await expect(form.locator('select[name="district_id"]')).toHaveValue("");
+  await expect(page.getByRole("button", { name: "清除條件" })).toBeDisabled();
+});
+
 test("協助登記 must answer hosting while the public survey is open", async ({ page }) => {
   let created;
   await mockStaff(page, "staff", () => {}, "測試登記", {

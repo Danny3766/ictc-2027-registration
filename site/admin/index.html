@@ -54,7 +54,9 @@
           <h2>登記名單</h2>
           <form id="search-form" class="staff-search inline-form">
             <label>姓名或流水號<input name="search" maxlength="100" /></label>
+            <label>區<select name="district_id"><option value="">全部區</option></select></label>
             <button type="submit">搜尋</button>
+            <button id="clear-search" type="button" class="secondary" disabled>清除條件</button>
           </form>
           <p id="registration-count"></p>
           <div class="table-scroll"><table id="registration-table"><thead><tr><th>流水號</th><th>姓名</th><th>區</th><th>狀態</th><th>匯入大會</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="registration-rows"></tbody></table></div>
