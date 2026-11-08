@@ -108,6 +108,10 @@ main.wide .compact-form { max-width: none; }
 .stat-cards .table-scroll { margin: 0; }
 /* A narrow card fits its three or four columns: tighter cells, and headers and names may wrap. */
 .stat-cards :is(th, td) { padding-inline: .4rem; white-space: normal; }
+/* 各區各活動: three cards a row on wide screens, so 全會所 and four districts read as 3 + 2; phones keep one a row. */
+@media (min-width: 56rem) {
+  #district-activity-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 tr.total td { border-top: 2px solid #c9d4ce; background: #f6f9f7; font-weight: 700; }
 
 .table-scroll { overflow-x: auto; margin: .5rem 0 1rem; }

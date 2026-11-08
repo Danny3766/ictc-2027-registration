@@ -348,9 +348,10 @@ Q43 已確認。
 決策見[需求討論與決策紀錄](需求討論與決策紀錄.md)「2026-11-08 後台登記名單依區篩選」一節。部署順序：每個環境都先部署 `staff` Edge Function，再部署前端。
 
 - [x] 本機完成：登記名單加「區」下拉選單與「清除條件」按鈕；`staff` Edge Function 的 `list_registrations` 接受選填的 `district_id`（正整數），其他值回傳 `INVALID_REQUEST`；登出（包含登入過期）時清空名單條件。Edge Function 單元測試與 Playwright 已補。（2026-11-08）
-- [ ] PR `feat/admin-list-filter-csv-label` → `develop`。
+- [x] 本機完成：「各區各活動」小卡寬螢幕每列 3 張（上 3 下 2）、手機每列 1 張；Playwright 新增排列案例。決策見[需求討論與決策紀錄](需求討論與決策紀錄.md)「2026-11-08 各區各活動小卡排版」一節。（2026-11-08）
+- [ ] PR `feat/admin-list-and-stats` → `develop`。
 - [ ] 測試專案：Dashboard 部署 `develop` 上的 `supabase/functions/staff/index.ts` 到 `staff` Edge Function（Verify JWT 維持開啟）。
-- [ ] 更新測試站前端，專案負責人確認區篩選、清除條件與 CSV 按鈕文字。
+- [ ] 更新測試站前端，專案負責人確認區篩選、清除條件、CSV 按鈕文字與各區各活動小卡排列。
 - [ ] 正式專案：Dashboard 部署同一份 `staff` Edge Function（Verify JWT 維持開啟）。
 - [ ] PR `develop` → `main`，以 **Create a merge commit** 合併；部署後確認正式站後台的區篩選與按鈕文字。不需關閉登記。
 

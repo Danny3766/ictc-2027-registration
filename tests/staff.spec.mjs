@@ -1395,6 +1395,38 @@ test("協助登記 follows the audience and asks the identity for a student-pric
   expect(created.choices).toEqual([{ activity_id: 1, attending: true }, { activity_id: 2, attending: false }, { activity_id: 3, attending: false }]);
 });
 
+test("各區各活動 shows three cards a row on wide screens and one a row on phones", async ({ page }) => {
+  await mockStaff(page, "staff", () => {}, "測試登記", {
+    list_reference: () => ({ json: {
+      settings: { event_name: "測試", is_registration_open: false },
+      districts: ["林森", "忠孝", "杭州", "其他"].map((name, index) => ({ id: index + 1, name, sort_order: index + 1 })),
+      activities: [{ id: 1, title: "測試聚會", is_published: true, fee_amount: 0 }], program: [],
+    } }),
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await login(page);
+  // Clicking the nav link brings 統計與匯出 into view, also where it is shown one section at a time.
+  await page.locator('.staff-nav a[href="#section-stats"]').click();
+  await page.getByRole("button", { name: "更新統計" }).click();
+  const cards = page.locator("#district-activity-cards > .mini-card");
+  await expect(cards).toHaveCount(5);
+  const boxes = () => cards.evaluateAll((items) => items.map((item) => {
+    const { x, y } = item.getBoundingClientRect();
+    return { x: Math.round(x), y: Math.round(y) };
+  }));
+  // 全會所 and the first two districts on top, the other two below, starting under 全會所.
+  let at = await boxes();
+  expect(new Set(at.slice(0, 3).map((box) => box.y)).size).toBe(1);
+  expect(at[3].y).toBe(at[4].y);
+  expect(at[3].y).toBeGreaterThan(at[0].y);
+  expect(at[3].x).toBe(at[0].x);
+  expect(at[4].x).toBe(at[1].x);
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect.poll(async () => new Set((await boxes()).map((box) => box.x)).size).toBe(1);
+  at = await boxes();
+  expect(at.every((box, index) => index === 0 || box.y > at[index - 1].y)).toBe(true);
+});
+
 test("admin forms and statistics are compact: fields share rows on wide screens and stack on phones", async ({ page }) => {
   await mockStaff(page, "admin", () => {}, "測試登記", { list_staff: () => ({ json: { staff: [
     { auth_user_id: "123e4567-e89b-42d3-a456-426614174099", username: "helper", display_name: "測試服事者乙", role: "staff", is_active: true },
