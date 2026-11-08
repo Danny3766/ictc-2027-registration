@@ -52,7 +52,7 @@ test("CSV neutralizes spreadsheet formulas", async ({ page }, testInfo) => {
   await page.locator('#login-form input[name="password"]').fill("test-password");
   await page.getByRole("button", { name: "登入" }).click();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "下載 CSV" }).click();
+  await page.getByRole("button", { name: "下載報名登記 CSV" }).click();
   const csv = await readFile(await (await download).path(), "utf8");
   expect(csv).toContain("'\u003d1+1");
   expect(csv).toContain('"待匯入"');
@@ -913,7 +913,7 @@ test("CSV adds the hosting and meal columns", async ({ page }, testInfo) => {
   await mockStaff(page, "staff", () => {}, "測試登記", hostedRegistrations);
   await login(page);
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "下載 CSV" }).click();
+  await page.getByRole("button", { name: "下載報名登記 CSV" }).click();
   const lines = (await readFile(await (await download).path(), "utf8")).split("\r\n");
   expect(lines[0]).toMatch(/"開家接待","接待對象","可接待人數","是否可以接機","可接機人數","用餐身分","預估應付餐費"$/);
   expect(lines[1]).toMatch(/"是","弟兄","2","是","1","","0"$/);
@@ -1154,7 +1154,7 @@ test("CSV shows the meal identity only where it is needed, and the fee by identi
   await mockStaff(page, "staff", () => {}, "測試登記", mealReplies());
   await login(page);
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "下載 CSV" }).click();
+  await page.getByRole("button", { name: "下載報名登記 CSV" }).click();
   const lines = (await readFile(await (await download).path(), "utf8")).split("\r\n");
   expect(lines[1]).toMatch(/^"4","甲",.*,"學生","130"$/);
   expect(lines[2]).toMatch(/^"3","乙",.*,"未回覆","220"$/);
