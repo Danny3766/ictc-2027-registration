@@ -1902,6 +1902,10 @@ test("admins manage meal identities, and prices typed into the activity form sur
   });
   await login(page, "身分別");
   const form = page.locator("#identity-form");
+  const cancel = form.getByRole("button", { name: "取消編輯" });
+  const submit = form.locator('button[type="submit"]');
+  // A new identity needs no way out, so 取消編輯 shows only while one is being edited.
+  await expect(cancel).toBeHidden();
   await form.getByLabel("身分名稱").fill("志工");
   await form.getByLabel("開放報名者選擇").uncheck();
   await form.getByRole("button", { name: "儲存身分" }).click();
@@ -1915,6 +1919,8 @@ test("admins manage meal identities, and prices typed into the activity form sur
   // Renaming an identity redraws the price fields without losing what was typed.
   await go(page, "身分別");
   await page.locator("#identity-rows tr").filter({ hasText: "志工" }).getByRole("button", { name: "編輯" }).click();
+  await expect(submit).toHaveText("儲存身分（編輯：志工）");
+  await expect(cancel).toBeVisible();
   await form.getByLabel("身分名稱").fill("服事者");
   await form.getByLabel("顯示標籤").check();
   await form.locator('[name="badge_color_hex"]').fill("#123456");
@@ -1926,6 +1932,8 @@ test("admins manage meal identities, and prices typed into the activity form sur
   await expect(badge).toHaveCSS("color", "rgb(255, 255, 255)");
   expect(writes[1].data).toMatchObject({ show_badge: true, badge_color: "#123456" });
   await expect(form.locator('[name="code"]')).toHaveValue("");
+  await expect(submit).toHaveText("儲存身分");
+  await expect(cancel).toBeHidden();
   await page.locator("#identity-rows tr").filter({ hasText: "服事者" }).getByRole("button", { name: "編輯" }).click();
   await expect(form.getByLabel("顯示標籤")).toBeChecked();
   await expect(form.locator('[name="badge_color_hex"]')).toHaveValue("#123456");
@@ -1933,7 +1941,12 @@ test("admins manage meal identities, and prices typed into the activity form sur
   expect(await form.locator('[name="badge_color_hex"]').evaluate((input) => input.validity.patternMismatch)).toBe(true);
   await form.getByRole("button", { name: "儲存身分" }).click();
   expect(writes).toHaveLength(2);
-  await form.getByRole("button", { name: "取消／新增" }).click();
+  await cancel.focus();
+  await page.keyboard.press("Enter");
+  await expect(submit).toHaveText("儲存身分");
+  await expect(cancel).toBeHidden();
+  await expect(form.getByLabel("身分名稱")).toBeFocused();
+  await expect(form.locator('[name="code"]')).toHaveValue("");
   await expect(form.getByLabel("顯示標籤")).not.toBeChecked();
   await expect(form.locator('[name="badge_color_hex"]')).toHaveValue("#e1effe");
   await go(page, "活動");
@@ -1960,6 +1973,21 @@ test("admins manage meal identities, and prices typed into the activity form sur
   await go(page, "活動");
   await expect(page.locator("#general-price-name")).toHaveText("成人");
   await expect(page.getByLabel("成人每人費用")).toBeVisible();
+
+  // An edit left open at 登出 does not carry over to whoever logs in next.
+  await go(page, "身分別");
+  await page.locator("#identity-rows tr").filter({ hasText: "兒童（國小）" }).getByRole("button", { name: "編輯" }).click();
+  await expect(cancel).toBeVisible();
+  await page.getByRole("button", { name: "登出" }).click();
+  // Same page, no reload: a reload would clear the form by itself.
+  await page.locator('#login-form input[name="username"]').fill("tester");
+  await page.locator('#login-form input[name="password"]').fill("test-password");
+  await page.getByRole("button", { name: "登入" }).click();
+  await go(page, "身分別");
+  await expect(form.getByLabel("身分名稱")).toHaveValue("");
+  await expect(form.getByLabel("啟用", { exact: true })).toBeEnabled();
+  await expect(submit).toHaveText("儲存身分");
+  await expect(cancel).toBeHidden();
 });
 
 test("configured badges use custom identities and hide child badges without changing counts", async ({ page }) => {

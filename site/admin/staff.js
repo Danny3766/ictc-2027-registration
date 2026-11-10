@@ -148,7 +148,7 @@ function clearSession() {
   staffPanel.hidden = true;
   showAdminSections(false);
   document.querySelector("#identity").textContent = "";
-  for (const form of ["#create-staff-form", "#edit-staff-form", "#staff-password-form", "#change-password-form"]) {
+  for (const form of ["#create-staff-form", "#edit-staff-form", "#staff-password-form", "#change-password-form", "#identity-form"]) {
     document.querySelector(form).reset();
   }
   document.querySelector("#staff-editor").hidden = true;
@@ -1152,6 +1152,8 @@ function renderIdentities() {
       form.elements.badge_color_hex.value = identity.badge_color ?? "#e1effe";
       form.elements.is_active.disabled = reservedIdentity(identity.code);
       form.elements.public_selectable.disabled = reservedIdentity(identity.code);
+      setEditing(form, { id: identity.code, title: identity.name });
+      form.querySelector('button[type="reset"]').hidden = false;
     });
     if (!reservedIdentity(identity.code)) {
       const remove = document.createElement("button");
@@ -1208,6 +1210,12 @@ document.querySelector("#identity-form").addEventListener("reset", (event) => {
   elements.code.value = "";
   elements.is_active.disabled = false;
   elements.public_selectable.disabled = false;
+  // 取消編輯 shows only while an identity is being edited; saving or deleting also lands here.
+  setEditing(event.currentTarget, null);
+  const cancel = event.currentTarget.querySelector('button[type="reset"]');
+  // Hiding the focused button would drop keyboard focus to the top of the page.
+  if (document.activeElement === cancel) elements.name.focus();
+  cancel.hidden = true;
 });
 
 for (const [selector, kind] of [
