@@ -523,7 +523,7 @@ async function saveReference(event, kind) {
     let outside;
     try {
       outside = activeRegistrations(await allRegistrations()).filter((registration) => attends(registration, edited)
-        && !Meals.eligible(data, { isChild: registration.is_child, hostingStatus: hostingOf(registration)?.status,
+        && !Meals.eligible(data, { skipsHosting: !Meals.answersHosting(registration.meal_identity ?? "general"), hostingStatus: hostingOf(registration)?.status,
           pickupStatus: pickupOf(registration)?.status, choices: registration.registration_choices,
           activities: reference.activities })).length;
     } catch (error) { return showMessage(error.message, true); }
@@ -628,7 +628,7 @@ async function showStatistics() {
       total.subsidy.unset.push(...subsidy.unset);
     }
     const restricted = attendees.filter((registration) => !Meals.eligible(activity, {
-      isChild: registration.is_child, hostingStatus: hostingOf(registration)?.status, pickupStatus: pickupOf(registration)?.status,
+      skipsHosting: !Meals.answersHosting(registration.meal_identity ?? "general"), hostingStatus: hostingOf(registration)?.status, pickupStatus: pickupOf(registration)?.status,
       choices: registration.registration_choices, activities: reference.activities,
     })).length;
     if (restricted) outside.push(`${activity.title} ${restricted} 人`);
@@ -857,8 +857,8 @@ function renderChoiceFields(container, choices = new Map(), requireAll = true) {
   Meals.render(container, currentActivities());
 }
 
-// 兒童 (same rules as the public form): the surveys are not asked, since both are stored as 否, and the
-// parent's name is required at the bottom. editable is false while a record is only being viewed.
+// Same rules as the public form: only 一般 is asked the surveys (anyone else gets 否 for both), and a
+// 兒童 needs the parent's name at the bottom. editable is false while a record is only being viewed.
 function syncChildFields(form, editable = true) {
   const child = Boolean(Meals.childType(form.elements.meal_identity.value));
   form.querySelector(".preschool-hint").hidden = form.elements.meal_identity.value !== "preschool";
@@ -866,8 +866,9 @@ function syncChildFields(form, editable = true) {
   form.querySelector(".parent-name").hidden = !child;
   form.elements.parent_name.disabled = !child || !editable;
   const panel = form.querySelector(".hosting-panel");
-  panel.hidden = child;
-  panel.disabled = child || !editable;
+  const skip = !Meals.answersHosting(form.elements.meal_identity.value);
+  panel.hidden = skip;
+  panel.disabled = skip || !editable;
 }
 // The parent's name to send: trimmed for a child, nothing otherwise; throws when a child has none.
 function parentNameFrom(form) {
@@ -883,7 +884,7 @@ const childTypeOf = (selector) => Meals.childType(document.querySelector(selecto
 function syncNewMeals() {
   const childType = childTypeOf("#new-registration-form");
   Meals.sync(document.querySelector("#new-registration-choices"), currentActivities(), {
-    isChild: Boolean(childType), childType,
+    skipsHosting: !Meals.answersHosting(document.querySelector("#new-registration-form").elements.meal_identity.value), childType,
     hostingStatus: checkedStatus("#new-registration-hosting"),
     pickupStatus: Pickup.read(document.querySelector("#new-registration-pickup"))?.status,
   });
@@ -893,7 +894,7 @@ function syncDetailMeals() {
   if (!editingRegistration) return;
   const childType = childTypeOf("#edit-registration-form");
   Meals.sync(document.querySelector("#detail-choices"), currentActivities(), {
-    isChild: Boolean(childType), childType,
+    skipsHosting: !Meals.answersHosting(document.querySelector("#edit-registration-form").elements.meal_identity.value), childType,
     hostingStatus: checkedStatus("#detail-hosting"),
     pickupStatus: Pickup.read(document.querySelector("#detail-pickup"))?.status,
   });
@@ -1515,12 +1516,13 @@ document.querySelector("#edit-registration-form").addEventListener("submit", asy
   const reverted = Meals.revertedCount(document.querySelector("#detail-choices"));
   if (reverted && !confirm(`這筆登記有 ${reverted} 項限定活動不符報名對象，儲存後會改為不參加。確定儲存？`)) return;
   const child = parentName !== null;
+  const skip = !Meals.answersHosting(form.elements.meal_identity.value);
   try {
     await api("save_registration", {
       registration_id: selectedRegistration.id, full_name: data.get("full_name"),
       district_id: Number(data.get("district_id")), choices,
-      hosting: child ? null : Hosting.read(document.querySelector("#detail-hosting")),
-      pickup: child ? null : Pickup.read(document.querySelector("#detail-pickup")),
+      hosting: skip ? null : Hosting.read(document.querySelector("#detail-hosting")),
+      pickup: skip ? null : Pickup.read(document.querySelector("#detail-pickup")),
       meal_identity: Meals.readIdentity(form),
       is_child: child, child_type: Meals.childType(form.elements.meal_identity.value), parent_name: parentName ?? undefined,
     });
@@ -1560,12 +1562,13 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
   try {
     const parentName = parentNameFrom(form);
     const child = parentName !== null;
+    const skip = !Meals.answersHosting(form.elements.meal_identity.value);
     const result = await api("create_registration", {
       create_request_id: newRegistrationRequestId,
       full_name: data.get("full_name"), district_id: Number(data.get("district_id")),
       choices: choicesFromForm(form),
-      hosting: child ? null : Hosting.read(document.querySelector("#new-registration-hosting")),
-      pickup: child ? null : Pickup.read(document.querySelector("#new-registration-pickup")),
+      hosting: skip ? null : Hosting.read(document.querySelector("#new-registration-hosting")),
+      pickup: skip ? null : Pickup.read(document.querySelector("#new-registration-pickup")),
       meal_identity: Meals.readIdentity(form),
       is_child: child, child_type: Meals.childType(form.elements.meal_identity.value), parent_name: parentName ?? undefined,
     });

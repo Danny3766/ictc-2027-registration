@@ -1159,6 +1159,7 @@ test("a 協助登記 pickup answer survives a settings save", async ({ page }) =
   } });
   await mockStaff(page, "admin", () => {}, "測試登記", { list_reference: openReference });
   await login(page, "協助登記");
+  await page.locator('#new-registration-form [name="meal_identity"]').selectOption("general");
   const pickup = page.locator("#new-registration-pickup");
   await pickup.locator('[name="pickup_status"][value="yes"]').check();
   await pickup.locator('[name="pickup_count"]').selectOption("4");
@@ -1497,6 +1498,8 @@ test("協助登記 follows the audience and asks the identity for a student-pric
   await login(page, "協助登記");
   const form = page.locator("#new-registration-form");
   const lunch = form.locator('[data-activity="1"]');
+  const identity = form.locator('[name="meal_identity"]');
+  await identity.selectOption("general");
   await expect(lunch.locator('input[value="true"]')).toBeDisabled();
   await page.locator("#new-registration-hosting").getByLabel("家人已登記開家接待").check();
   await expect(lunch.locator('input[value="true"]')).toBeEnabled();
@@ -1505,14 +1508,19 @@ test("協助登記 follows the audience and asks the identity for a student-pric
   await lunch.locator('input[value="true"]').check();
   await form.locator('input[name="activity_2"][value="false"]').check();
   await form.locator('input[name="activity_3"][value="false"]').check();
+  // The identity question is required.
+  await identity.selectOption("");
   await form.getByRole("button", { name: "建立協助登記" }).click();
-  // The identity question is required now.
   expect(created).toBeUndefined();
-  await form.locator('[name="meal_identity"]').selectOption("student");
+  // Only 一般 answers the surveys; a student is outside the hosting audience and keeps the lunch.
+  await identity.selectOption("student");
+  await expect(form.locator(".hosting-panel")).toBeHidden();
+  await expect(lunch.locator('input[value="true"]')).toBeChecked();
   await form.getByRole("button", { name: "建立協助登記" }).click();
   await expect(page.locator("#new-registration-code")).toContainText("已建立流水號 5");
   await expect(page.locator("#message")).toHaveText("協助登記已建立。");
   expect(created.meal_identity).toBe("student");
+  expect(created.hosting).toBeNull();
   expect(created.choices).toEqual([{ activity_id: 1, attending: true }, { activity_id: 2, attending: false }, { activity_id: 3, attending: false }]);
 });
 
@@ -1735,6 +1743,9 @@ test("協助登記 for a child hides both surveys and requires the parent's name
     "測試登記", { ...familyReplies, create_registration: () => ({ status: 201, json: { serial_no: 6 } }) });
   await login(page, "協助登記");
   const form = page.locator("#new-registration-form");
+  // The surveys wait for 一般.
+  await expect(form.locator(".hosting-panel")).toBeHidden();
+  await form.getByRole("combobox", { name: "身分別", exact: true }).selectOption("general");
   await expect(form.locator(".hosting-panel")).toBeVisible();
   await form.getByRole("combobox", { name: "身分別", exact: true }).selectOption("child");
   await expect(form.locator(".hosting-panel")).toBeHidden();
@@ -1756,7 +1767,7 @@ test("協助登記 for a child hides both surveys and requires the parent's name
   expect(created[0]).toMatchObject({ full_name: "王小美", is_child: true, meal_identity: "child", child_type: "elementary", parent_name: "王爸爸", hosting: null, pickup: null });
   // A new registration starts with no identity selected.
   await expect(form.getByRole("combobox", { name: "身分別", exact: true })).toHaveValue("");
-  await expect(form.locator(".hosting-panel")).toBeVisible();
+  await expect(form.locator(".hosting-panel")).toBeHidden();
   await expect(form.locator(".parent-name")).toBeHidden();
 });
 
@@ -1977,4 +1988,22 @@ test("configured badges use custom identities and hide child badges without chan
   await expect(children).toHaveText("3");
   await expect(children.locator(".stat-details")).toHaveCount(0);
   await expect(children).toHaveAttribute("data-csv", "3（國小 3）");
+});
+
+test("協助登記 shows the child reminders as a blue block and the surveys for 一般 only", async ({ page }) => {
+  await mockStaff(page, "staff", () => {}, "測試登記", familyReplies);
+  await login(page, "協助登記");
+  const form = page.locator("#new-registration-form");
+  const identity = form.getByRole("combobox", { name: "身分別", exact: true });
+  const reminder = form.locator("div.reminder");
+  await expect(reminder).toBeHidden();
+  await identity.selectOption("preschool");
+  await expect(reminder).toBeVisible();
+  await expect(reminder).toHaveCSS("background-color", "rgb(232, 241, 251)");
+  await expect(reminder).toHaveCSS("color", "rgb(29, 79, 134)");
+  await identity.selectOption("student");
+  await expect(reminder).toBeHidden();
+  await expect(form.locator(".hosting-panel")).toBeHidden();
+  await identity.selectOption("general");
+  await expect(form.locator(".hosting-panel")).toBeVisible();
 });
