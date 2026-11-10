@@ -37,9 +37,9 @@ async function pickupRequiredResponse(database) {
 // on update as "this registration can no longer be changed" and leaves the edit form.
 function mealResponse(error) {
   if (error?.message?.includes("MEAL_IDENTITY_REQUIRED")) {
-    return response({ error: "請選擇用餐身分；看不到這一題時請重新整理頁面" }, 400);
+    return response({ error: "請選擇身分別；看不到這一題時請重新整理頁面" }, 400);
   }
-  if (error?.message?.includes("INVALID_MEAL_IDENTITY")) return response({ error: "請檢查用餐身分" }, 400);
+  if (error?.message?.includes("INVALID_MEAL_IDENTITY")) return response({ error: "請檢查身分別" }, 400);
   if (error?.message?.includes("AUDIENCE_RESTRICTED")) {
     return response({ error: "有活動不符合報名對象，請確認開家、接機與活動選擇；畫面不符時請重新整理頁面" }, 400);
   }
@@ -54,6 +54,9 @@ export function validMealIdentity(value) {
 
 // Left out or null keeps the saved child fields on an update; "" is not a child; otherwise preschool or elementary.
 // A child needs a parent name of 1～20 characters after trimming, counted like the database's length().
+// The identity decides the child type: child is 國小, preschool 學齡前, anything else not a child.
+const childTypeOf = (identity) => identity === "preschool" ? "preschool" : identity === "child" ? "elementary" : "";
+
 export function validChild(childType, parentName) {
   if (childType === undefined || childType === null || childType === "") return true;
   if (!["preschool", "elementary"].includes(childType) || typeof parentName !== "string") return false;
@@ -166,7 +169,8 @@ export async function handler(request) {
     return response({ error: "服務暫時無法使用" }, 503);
   }
   if (allowed !== true) return response({ error: "操作次數過多，請稍後再試" }, 429);
-  if (!validMealIdentity(body.meal_identity)) return response({ error: "請檢查用餐身分" }, 400);
+  if (!validMealIdentity(body.meal_identity)) return response({ error: "請檢查身分別" }, 400);
+  if (body.meal_identity != null) body.child_type = childTypeOf(body.meal_identity);
   if (!validChild(body.child_type, body.parent_name)) return response({ error: parentNameMessage }, 400);
 
   if (action === "create") {
