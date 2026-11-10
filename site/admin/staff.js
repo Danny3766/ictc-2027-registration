@@ -233,21 +233,23 @@ function cell(row, value) {
   return item;
 }
 
-// 兒童類型: the label for the list badge and the registration CSV, "" for anyone not a child.
+// 兒童類型: the registration CSV label, "" for anyone not a child.
 const childLabel = (type) => ({ preschool: "學齡前", elementary: "國小" })[type] ?? "";
-function appendChildBadge(container, type) {
-  if (!childLabel(type)) return;
+function appendIdentityBadge(container, registration, suffix = "") {
+  const identity = reference.identities?.find((item) => item.code === registration.meal_identity);
+  if (!identity?.show_badge) return;
   const badge = document.createElement("span");
-  badge.className = `child-badge ${type}`;
-  badge.textContent = childLabel(type);
-  container.append(badge);
-}
-
-function appendIdentityBadge(container, registration) {
-  if (registration.meal_identity !== "student") return appendChildBadge(container, registration.child_type);
-  const badge = document.createElement("span");
-  badge.className = "child-badge student";
-  badge.textContent = Meals.identityLabels.student ?? "學生";
+  badge.className = "child-badge";
+  const color = /^#[0-9a-f]{6}$/i.test(identity.badge_color) ? identity.badge_color : "#e1effe";
+  badge.style.backgroundColor = color;
+  // Choose the higher-contrast text color using sRGB relative luminance.
+  const channels = color.slice(1).match(/../g).map((hex) => {
+    const value = parseInt(hex, 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  badge.style.color = luminance > 0.179 ? "#000000" : "#ffffff";
+  badge.textContent = identity.name + suffix;
   container.append(badge);
 }
 // 其中兒童: the total on top, a badge per child type with anyone in it below; the CSV gets "3（國小 3）".
@@ -261,10 +263,9 @@ function childrenCell(row, people) {
   if (nonzero.length) {
     const details = document.createElement("div"); details.className = "stat-details";
     for (const entry of nonzero) {
-      const badge = document.createElement("span"); badge.className = `child-badge ${entry.type}`;
-      badge.textContent = `${entry.label} ${entry.count}`; details.append(badge);
+      appendIdentityBadge(details, { meal_identity: entry.type === "preschool" ? "preschool" : "child" }, ` ${entry.count}`);
     }
-    item.append(details);
+    if (details.children.length) item.append(details);
   }
 }
 // 各活動 fee: the amount on top, feeText's "（…未計入）" note below on grey; the CSV keeps the whole text.
@@ -933,14 +934,19 @@ function choicesFromForm(form) {
 
 // Opens in view mode, every field locked, so looking at a record cannot change it by a stray tap;
 // 修改登記資料 reopens it with editing = true. Reopening from the stored record also undoes any edit.
+function renderDetailTitle(registration) {
+  const title = document.querySelector("#detail-title");
+  title.textContent = `登記 #${registration.serial_no}｜${registration.full_name}`;
+  appendIdentityBadge(title, registration);
+}
+
 function openRegistration(registration, editing = false) {
   const switching = selectedRegistration?.id !== registration.id;
   selectedRegistration = registration;
   editingRegistration = editing && registration.record_status === "active";
   const detail = document.querySelector("#registration-detail");
   detail.hidden = false;
-  document.querySelector("#detail-title").textContent = `登記 #${registration.serial_no}｜${registration.full_name}`;
-  appendIdentityBadge(document.querySelector("#detail-title"), registration);
+  renderDetailTitle(registration);
   const form = document.querySelector("#edit-registration-form");
   form.elements.full_name.value = registration.full_name;
   Meals.renderIdentity(form.elements.meal_identity, registration.meal_identity ?? "general");
@@ -1126,7 +1132,7 @@ const identityPricesFrom = (form) => [...form.querySelectorAll("[data-identity-p
   .filter((input) => input.value !== "")
   .map((input) => ({ identity_code: input.dataset.identityPrice, fee_amount: Number(input.value) }));
 
-// 一般 and both 兒童 identities are reserved: they can be renamed only.
+// 一般 and both 兒童 identities are reserved: keep them active and publicly selectable.
 const reservedIdentity = (code) => ["general", "child", "preschool"].includes(code);
 
 function renderIdentities() {
@@ -1137,9 +1143,12 @@ function renderIdentities() {
     cell(row, identity.name);
     cell(row, identity.is_active ? "啟用" : "停用");
     cell(row, identity.public_selectable ? "是" : "僅後台");
+    appendIdentityBadge(cell(row, identity.show_badge ? "" : "不顯示"), { meal_identity: identity.code });
     editButton(row, () => {
       const form = document.querySelector("#identity-form");
       fillForm(form, identity);
+      // The stored code, not the color picker's lowercase copy, so saving unchanged writes no audit row.
+      form.elements.badge_color_hex.value = identity.badge_color ?? "#e1effe";
       form.elements.is_active.disabled = reservedIdentity(identity.code);
       form.elements.public_selectable.disabled = reservedIdentity(identity.code);
     });
@@ -1169,14 +1178,29 @@ async function saveIdentity(kind, data) {
     renderNewRegistrationForm();
     document.querySelector("#identity-form").reset();
     showMessage("身分已更新。");
-  } catch (error) { showMessage(error.message, true); }
+  } catch (error) { showMessage(error.message, true); return; }
+  // The identity is already saved, so a failed redraw must not read as a failed save.
+  try {
+    await loadRegistrations();
+    if (selectedRegistration) renderDetailTitle(selectedRegistration);
+    // 各區 always has its 合計 row once statistics were shown, even with no published activity.
+    if (document.querySelector("#district-stats-rows").children.length) await showStatistics();
+  } catch (error) { showMessage(`身分已更新，但畫面未能重新整理：${error.message}`, true); }
 }
 
 document.querySelector("#identity-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const { elements } = event.currentTarget;
   saveIdentity("identity", { code: elements.code.value, name: elements.name.value,
-    is_active: elements.is_active.checked, public_selectable: elements.public_selectable.checked });
+    is_active: elements.is_active.checked, public_selectable: elements.public_selectable.checked,
+    show_badge: elements.show_badge.checked, badge_color: elements.badge_color_hex.value });
+});
+
+document.querySelector('#identity-form [name="badge_color"]').addEventListener("input", (event) => {
+  event.target.form.elements.badge_color_hex.value = event.target.value;
+});
+document.querySelector('#identity-form [name="badge_color_hex"]').addEventListener("input", (event) => {
+  if (/^#[0-9a-f]{6}$/i.test(event.target.value)) event.target.form.elements.badge_color.value = event.target.value;
 });
 document.querySelector("#identity-form").addEventListener("reset", (event) => {
   const { elements } = event.currentTarget;

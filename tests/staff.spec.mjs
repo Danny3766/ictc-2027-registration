@@ -7,6 +7,10 @@ function migrateReference(data) {
   if (!data.activities) return;
   data.identities ??= [["general", "一般"], ["student", "學生"], ["child", "兒童（國小）"], ["preschool", "兒童（學齡前）"]]
     .map(([code, name]) => ({ code, name, is_active: true, public_selectable: true }));
+  for (const identity of data.identities) {
+    identity.show_badge ??= ["student", "child", "preschool"].includes(identity.code);
+    identity.badge_color ??= ({ student: "#eee5fa", preschool: "#fce4ec" })[identity.code] ?? "#e1effe";
+  }
   for (const activity of data.activities) {
     activity.activity_identity_prices ??= activity.student_fee_amount == null ? []
       : [{ identity_code: "student", fee_amount: activity.student_fee_amount }];
@@ -1631,21 +1635,21 @@ test("student badges, dynamic identity filters and stacked child statistics use 
     list_registrations: () => ({ json: { count: people.length, registrations: people } }),
   });
   await login(page);
-  await expect(page.locator("#registration-rows tr").first().locator(".student")).toHaveText("學生");
+  await expect(page.locator("#registration-rows tr").first().locator(".child-badge")).toHaveText("學生");
   const filter = page.locator('#search-form [name="identity_filter"]');
   await expect(filter.locator("option")).toHaveText(["全部身分", "一般", "學生", "全部兒童", "兒童（國小）", "兒童（學齡前）", "舊身分（已停用）"]);
   await filter.selectOption("student");
   await page.getByRole("button", { name: "搜尋", exact: true }).click();
   await expect.poll(() => requests.at(-1).meal_identity).toBe("student");
   await page.locator("#registration-rows tr").first().getByRole("button", { name: "查看／處理" }).click();
-  await expect(page.locator("#detail-title .student")).toHaveText("學生");
+  await expect(page.locator("#detail-title .child-badge")).toHaveText("學生");
   await expect(page.locator('#edit-registration-form [name="meal_identity"]')).toHaveValue("student");
   await expect(page.locator("#detail-choices .meal-identity")).toHaveCount(0);
   await go(page, "統計與匯出");
   await page.getByRole("button", { name: "更新統計" }).click();
   const childCell = page.locator("#stats-rows tr").first().locator("td").nth(3);
-  await expect(childCell.locator(".elementary")).toHaveText("國小 3");
-  await expect(childCell.locator(".preschool")).toHaveCount(0);
+  await expect(childCell.locator(".child-badge")).toHaveText("兒童（國小） 3");
+  await expect(childCell.locator(".child-badge")).toHaveCount(1);
   await expect(childCell).toHaveAttribute("data-csv", "3（國小 3）");
   const [total, detail] = await childCell.evaluate((element) => {
     const range = document.createRange(); range.selectNodeContents(element.firstChild);
@@ -1789,7 +1793,7 @@ test("a parent's record lists the children by name, and a name opens that child'
   await page.getByRole("button", { name: "搜尋" }).click();
   await expect.poll(() => lists.at(-1)).toEqual({ action: "list_registrations", page: 0, search: "", district_id: 2, children_only: true });
   await children.getByRole("button", { name: "#4 王小明" }).click();
-  await expect(page.locator("#detail-title")).toHaveText("登記 #4｜王小明國小");
+  await expect(page.locator("#detail-title")).toHaveText("登記 #4｜王小明兒童（國小）");
   expect(lists.at(-1)).toEqual({ action: "list_registrations", page: 0, search: "4" });
   await expect(page.locator('#search-form input[name="search"]')).toHaveValue("4");
   await expect(page.locator('#search-form select[name="district_id"]')).toHaveValue("");
@@ -1835,7 +1839,7 @@ test("statistics count children per district, and the registration CSV has 兒�
   await page.getByRole("button", { name: "更新統計" }).click();
   await expect(page.locator("#district-stats-rows").locator("xpath=..").locator("th")).toHaveText(["區", "有效登記", "其中兒童", "預估費用"]);
   await expect(page.locator("#district-stats-rows tr")).toHaveText([/林森\s*4\s*2/, /中山\s*1\s*1/, /合計\s*5\s*3/]);
-  await expect(page.locator("#stats-rows tr td").nth(3)).toHaveText("3國小 3");
+  await expect(page.locator("#stats-rows tr td").nth(3)).toHaveText("3兒童（國小） 3");
   test.skip(testInfo.project.name !== "desktop-chromium", "Downloads are checked once.");
   const stats = page.waitForEvent("download");
   await page.getByRole("button", { name: "下載統計 CSV" }).click();
@@ -1891,7 +1895,7 @@ test("admins manage meal identities, and prices typed into the activity form sur
   await form.getByLabel("開放報名者選擇").uncheck();
   await form.getByRole("button", { name: "儲存身分" }).click();
   await expect(page.locator("#identity-rows")).toContainText("志工");
-  expect(writes[0]).toEqual({ kind: "identity", data: { code: "", name: "志工", is_active: true, public_selectable: false } });
+  expect(writes[0]).toEqual({ kind: "identity", data: { code: "", name: "志工", is_active: true, public_selectable: false, show_badge: false, badge_color: "#e1effe" } });
 
   await go(page, "活動");
   await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).click();
@@ -1901,9 +1905,26 @@ test("admins manage meal identities, and prices typed into the activity form sur
   await go(page, "身分別");
   await page.locator("#identity-rows tr").filter({ hasText: "志工" }).getByRole("button", { name: "編輯" }).click();
   await form.getByLabel("身分名稱").fill("服事者");
+  await form.getByLabel("顯示標籤").check();
+  await form.locator('[name="badge_color_hex"]').fill("#123456");
+  await expect(form.locator('[name="badge_color"]')).toHaveValue("#123456");
   await form.getByRole("button", { name: "儲存身分" }).click();
   await expect(page.locator("#identity-rows")).toContainText("服事者");
+  const badge = page.locator("#identity-rows .child-badge").filter({ hasText: "服事者" });
+  await expect(badge).toHaveCSS("background-color", "rgb(18, 52, 86)");
+  await expect(badge).toHaveCSS("color", "rgb(255, 255, 255)");
+  expect(writes[1].data).toMatchObject({ show_badge: true, badge_color: "#123456" });
   await expect(form.locator('[name="code"]')).toHaveValue("");
+  await page.locator("#identity-rows tr").filter({ hasText: "服事者" }).getByRole("button", { name: "編輯" }).click();
+  await expect(form.getByLabel("顯示標籤")).toBeChecked();
+  await expect(form.locator('[name="badge_color_hex"]')).toHaveValue("#123456");
+  await form.locator('[name="badge_color_hex"]').fill("red");
+  expect(await form.locator('[name="badge_color_hex"]').evaluate((input) => input.validity.patternMismatch)).toBe(true);
+  await form.getByRole("button", { name: "儲存身分" }).click();
+  expect(writes).toHaveLength(2);
+  await form.getByRole("button", { name: "取消／新增" }).click();
+  await expect(form.getByLabel("顯示標籤")).not.toBeChecked();
+  await expect(form.locator('[name="badge_color_hex"]')).toHaveValue("#e1effe");
   await go(page, "活動");
   await expect(page.locator('[data-identity-price="child"]')).toHaveValue("80");
   await expect(page.locator('[data-identity-price="volunteer"]')).toHaveValue("0");
@@ -1928,4 +1949,32 @@ test("admins manage meal identities, and prices typed into the activity form sur
   await go(page, "活動");
   await expect(page.locator("#general-price-name")).toHaveText("成人");
   await expect(page.getByLabel("成人每人費用")).toBeVisible();
+});
+
+test("configured badges use custom identities and hide child badges without changing counts", async ({ page }) => {
+  const people = [familyRow(6, "自訂身分驗證", { meal_identity: "volunteer" }), ...family];
+  const identities = [
+    { code: "general", name: "一般", show_badge: false },
+    { code: "child", name: "兒童（國小）", show_badge: false },
+    { code: "preschool", name: "兒童（學齡前）", show_badge: false },
+    { code: "volunteer", name: "服事者", show_badge: true, badge_color: "#ffcc00" },
+  ].map((identity) => ({ is_active: true, public_selectable: true, ...identity }));
+  await mockStaff(page, "staff", () => {}, "測試", {
+    list_reference: () => ({ json: { ...familyReference, identities } }),
+    list_registrations: () => ({ json: { count: people.length, registrations: people } }),
+  });
+  await login(page);
+  const badges = page.locator("#registration-rows .child-badge");
+  await expect(badges).toHaveCount(1);
+  await expect(badges).toHaveText("服事者");
+  await expect(badges).toHaveCSS("background-color", "rgb(255, 204, 0)");
+  await expect(badges).toHaveCSS("color", "rgb(0, 0, 0)");
+  await page.locator("#registration-rows tr").first().getByRole("button", { name: "查看／處理" }).click();
+  await expect(page.locator("#detail-title .child-badge")).toHaveText("服事者");
+  await go(page, "統計與匯出");
+  await page.getByRole("button", { name: "更新統計" }).click();
+  const children = page.locator("#stats-rows tr").first().locator("td").nth(3);
+  await expect(children).toHaveText("3");
+  await expect(children.locator(".stat-details")).toHaveCount(0);
+  await expect(children).toHaveAttribute("data-csv", "3（國小 3）");
 });

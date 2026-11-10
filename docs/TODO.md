@@ -10,7 +10,7 @@
 - [x] 名單姓名旁與詳情標題加學生淡紫標籤，一般不加標籤，兒童沿用粉紅／粉藍底。
 - [x] 各活動與各區的兒童總數在上，非零類型標籤在下；費用與補貼金額在上，未計入說明在下並加淺灰底。統計 CSV 保留文字分隔，個人明細兒童類型／家長姓名欄保留。
 - [x] 補資料庫／Edge Function 必要驗證及桌機、手機 Playwright，涵蓋既有身分保留、無用餐仍必填、兒童切換、身分篩選、標籤、零人類型隱藏及 CSV。
-- [ ] 測試站：確認已套用 `202611100001_child_type.sql`，再套用 `202611100002_unified_identity.sql`，執行 `supabase/testing/verify-unified-identity.sql`，部署 `registration`、`staff` Edge Function 及前端，驗收後再依正式環境 9-3 關閉登記並更新正式站。
+- [ ] 測試站：確認已套用 `202611100001_child_type.sql`，再套用 `202611100002_unified_identity.sql`、`202611100003_identity_badges.sql`，執行 `supabase/testing/verify-unified-identity.sql`、`supabase/testing/verify-identity-badges.sql`，部署 `registration`、`staff` Edge Function 及前端，驗收後再依正式環境 9-3 關閉登記並更新正式站。
 
 本機驗證：18 項單元測試、118 項桌機 Chromium Playwright，以及桌機 WebKit／手機 Chrome／手機 Safari 共 18 項針對性 Playwright 通過。隔離 PostgreSQL 套用新 migration，統一身分別 SQL 驗證通過並回滾測試資料。測試站與正式站尚未部署。
 
