@@ -108,6 +108,33 @@ function isUuid(value) {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+export async function readRequestJson(request) {
+  const limit = 64_000;
+  if (Number(request.headers.get("content-length")) > limit) {
+    if (request.body) void request.body.cancel().catch(() => {});
+    throw new RangeError("REQUEST_TOO_LARGE");
+  }
+  const reader = request.body?.getReader();
+  if (!reader) throw new SyntaxError("Empty request body");
+  const bytes = new Uint8Array(limit);
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value.byteLength > limit - length) {
+        void reader.cancel().catch(() => {});
+        throw new RangeError("REQUEST_TOO_LARGE");
+      }
+      bytes.set(value, length);
+      length += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return JSON.parse(new TextDecoder().decode(bytes.subarray(0, length)));
+}
+
 export async function handler(request) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
   if (request.method !== "POST") return response({ error: "METHOD_NOT_ALLOWED" }, 405);
@@ -135,10 +162,9 @@ export async function handler(request) {
 
   let body;
   try {
-    const raw = await request.text();
-    if (new TextEncoder().encode(raw).byteLength > 64_000) return response({ error: "REQUEST_TOO_LARGE" }, 413);
-    body = JSON.parse(raw);
-  } catch {
+    body = await readRequestJson(request);
+  } catch (error) {
+    if (error instanceof RangeError && error.message === "REQUEST_TOO_LARGE") return response({ error: "REQUEST_TOO_LARGE" }, 413);
     return response({ error: "INVALID_REQUEST" }, 400);
   }
   if (!body || typeof body !== "object" || Array.isArray(body)) return response({ error: "INVALID_REQUEST" }, 400);

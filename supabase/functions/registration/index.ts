@@ -108,6 +108,33 @@ function response(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: corsHeaders });
 }
 
+export async function readRequestJson(request) {
+  const limit = 64_000;
+  if (Number(request.headers.get("content-length")) > limit) {
+    if (request.body) void request.body.cancel().catch(() => {});
+    throw new RangeError("REQUEST_TOO_LARGE");
+  }
+  const reader = request.body?.getReader();
+  if (!reader) throw new SyntaxError("Empty request body");
+  const bytes = new Uint8Array(limit);
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value.byteLength > limit - length) {
+        void reader.cancel().catch(() => {});
+        throw new RangeError("REQUEST_TOO_LARGE");
+      }
+      bytes.set(value, length);
+      length += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return JSON.parse(new TextDecoder().decode(bytes.subarray(0, length)));
+}
+
 export async function handler(request) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (!["GET", "POST"].includes(request.method)) return response({ error: "METHOD_NOT_ALLOWED" }, 405);
@@ -142,12 +169,9 @@ export async function handler(request) {
 
   let body;
   try {
-    const rawBody = await request.text();
-    if (encoder.encode(rawBody).byteLength > 64_000) {
-      return response({ error: "REQUEST_TOO_LARGE" }, 413);
-    }
-    body = JSON.parse(rawBody);
-  } catch {
+    body = await readRequestJson(request);
+  } catch (error) {
+    if (error instanceof RangeError && error.message === "REQUEST_TOO_LARGE") return response({ error: "REQUEST_TOO_LARGE" }, 413);
     return response({ error: "INVALID_REQUEST" }, 400);
   }
   if (!body || typeof body !== "object" || Array.isArray(body)) {
