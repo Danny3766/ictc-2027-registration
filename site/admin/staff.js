@@ -162,14 +162,10 @@ function clearSession() {
   document.querySelector("#search-form").reset();
   [page, search, district, identityFilter] = [0, "", "", ""];
   document.querySelector("#clear-search").disabled = true;
-  for (const selector of ["#registration-rows", "#staff-rows"]) {
+  for (const selector of ["#registration-rows", "#staff-rows", "#stats-rows", "#district-stats-rows", "#district-activity-cards",
+    "#hosting-status-stats-rows", "#hosting-capacity-stats-rows"]) {
     document.querySelector(selector).replaceChildren();
   }
-  document.querySelector("#stats-rows").replaceChildren();
-  document.querySelector("#district-stats-rows").replaceChildren();
-  document.querySelector("#district-activity-cards").replaceChildren();
-  document.querySelector("#hosting-status-stats-rows").replaceChildren();
-  document.querySelector("#hosting-capacity-stats-rows").replaceChildren();
   document.querySelector("#stats-summary").textContent = "";
   document.querySelector("#registration-detail").hidden = true;
   selectedRegistration = null;
@@ -878,26 +874,36 @@ function parentNameFrom(form) {
   return name;
 }
 
+// The new-registration form and the record view, each with its own choices, hosting and pickup blocks.
+const registrationParts = {
+  new: ["#new-registration-form", "#new-registration-choices", "#new-registration-hosting", "#new-registration-pickup"],
+  detail: ["#edit-registration-form", "#detail-choices", "#detail-hosting", "#detail-pickup"],
+};
 // Staff follow the same audience and identity rules as the public form.
-const checkedStatus = (selector) => document.querySelector(`${selector} [name="hosting_status"]:checked`)?.value ?? null;
-const childTypeOf = (selector) => Meals.childType(document.querySelector(selector).elements.meal_identity.value);
-function syncNewMeals() {
-  const childType = childTypeOf("#new-registration-form");
-  Meals.sync(document.querySelector("#new-registration-choices"), currentActivities(), {
-    skipsHosting: !Meals.answersHosting(document.querySelector("#new-registration-form").elements.meal_identity.value), childType,
-    hostingStatus: checkedStatus("#new-registration-hosting"),
-    pickupStatus: Pickup.read(document.querySelector("#new-registration-pickup"))?.status,
+function syncMeals(parts) {
+  const [form, choices, hosting, pickup] = parts.map((selector) => document.querySelector(selector));
+  Meals.sync(choices, currentActivities(), {
+    skipsHosting: !Meals.answersHosting(form.elements.meal_identity.value),
+    hostingStatus: hosting.querySelector('[name="hosting_status"]:checked')?.value ?? null,
+    pickupStatus: Pickup.read(pickup)?.status,
   });
 }
-function syncDetailMeals() {
-  // Only while editing: sync would re-enable allowed choices and show what saving would change.
-  if (!editingRegistration) return;
-  const childType = childTypeOf("#edit-registration-form");
-  Meals.sync(document.querySelector("#detail-choices"), currentActivities(), {
-    skipsHosting: !Meals.answersHosting(document.querySelector("#edit-registration-form").elements.meal_identity.value), childType,
-    hostingStatus: checkedStatus("#detail-hosting"),
-    pickupStatus: Pickup.read(document.querySelector("#detail-pickup"))?.status,
-  });
+const syncNewMeals = () => syncMeals(registrationParts.new);
+// Only while editing: sync would re-enable allowed choices and show what saving would change.
+const syncDetailMeals = () => editingRegistration && syncMeals(registrationParts.detail);
+
+// What both registration forms send; throws when a child has no parent name.
+function registrationFields(parts) {
+  const [form, , hosting, pickup] = parts.map((selector) => document.querySelector(selector));
+  const data = new FormData(form);
+  const parentName = parentNameFrom(form);
+  const skip = !Meals.answersHosting(form.elements.meal_identity.value);
+  return {
+    full_name: data.get("full_name"), district_id: Number(data.get("district_id")), choices: choicesFromForm(form),
+    hosting: skip ? null : Hosting.read(hosting), pickup: skip ? null : Pickup.read(pickup),
+    meal_identity: Meals.readIdentity(form),
+    child_type: Meals.childType(form.elements.meal_identity.value), parent_name: parentName ?? undefined,
+  };
 }
 
 // Redrawn whenever districts or activities change, so it keeps what staff already entered.
@@ -953,14 +959,8 @@ function openRegistration(registration, editing = false) {
   Meals.renderIdentity(form.elements.meal_identity, registration.meal_identity ?? "general");
   form.elements.parent_name.value = registration.parent_name ?? "";
   const districts = form.elements.district_id;
-  districts.replaceChildren();
-  for (const district of reference.districts) {
-    const option = document.createElement("option");
-    option.value = district.id;
-    option.textContent = district.name;
-    option.selected = district.id === registration.district_id;
-    districts.append(option);
-  }
+  districts.replaceChildren(...reference.districts.map((district) =>
+    new Option(district.name, district.id, false, district.id === registration.district_id)));
   const choices = new Map(registration.registration_choices.map((choice) => [choice.activity_id, choice.attending]));
   renderChoiceFields(document.querySelector("#detail-choices"), choices, false);
   document.querySelector("#import-form").elements.status.value = registration.import_status;
@@ -1507,25 +1507,13 @@ document.querySelector("#download-stats-csv").addEventListener("click", () =>
   downloadStatisticsCsv().catch((error) => showMessage(error.message, true)));
 document.querySelector("#edit-registration-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const form = event.currentTarget;
-  const data = new FormData(form);
-  const choices = choicesFromForm(form);
-  let parentName;
-  try { parentName = parentNameFrom(form); } catch (error) { return showMessage(error.message, true); }
+  let fields;
+  try { fields = registrationFields(registrationParts.detail); } catch (error) { return showMessage(error.message, true); }
   // Saving applies the audience rule to sign-ups from before an activity was restricted.
   const reverted = Meals.revertedCount(document.querySelector("#detail-choices"));
   if (reverted && !confirm(`這筆登記有 ${reverted} 項限定活動不符報名對象，儲存後會改為不參加。確定儲存？`)) return;
-  const child = parentName !== null;
-  const skip = !Meals.answersHosting(form.elements.meal_identity.value);
   try {
-    await api("save_registration", {
-      registration_id: selectedRegistration.id, full_name: data.get("full_name"),
-      district_id: Number(data.get("district_id")), choices,
-      hosting: skip ? null : Hosting.read(document.querySelector("#detail-hosting")),
-      pickup: skip ? null : Pickup.read(document.querySelector("#detail-pickup")),
-      meal_identity: Meals.readIdentity(form),
-      is_child: child, child_type: Meals.childType(form.elements.meal_identity.value), parent_name: parentName ?? undefined,
-    });
+    await api("save_registration", { registration_id: selectedRegistration.id, ...fields });
     await refreshRegistration();
     // Back in view mode the save button is hidden; focus the way back into editing.
     document.querySelector("#start-registration-edit").focus();
@@ -1558,19 +1546,9 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
   const submit = form.querySelector('button[type="submit"]');
   if (submit.disabled) return;
   submit.disabled = true;
-  const data = new FormData(form);
   try {
-    const parentName = parentNameFrom(form);
-    const child = parentName !== null;
-    const skip = !Meals.answersHosting(form.elements.meal_identity.value);
     const result = await api("create_registration", {
-      create_request_id: newRegistrationRequestId,
-      full_name: data.get("full_name"), district_id: Number(data.get("district_id")),
-      choices: choicesFromForm(form),
-      hosting: skip ? null : Hosting.read(document.querySelector("#new-registration-hosting")),
-      pickup: skip ? null : Pickup.read(document.querySelector("#new-registration-pickup")),
-      meal_identity: Meals.readIdentity(form),
-      is_child: child, child_type: Meals.childType(form.elements.meal_identity.value), parent_name: parentName ?? undefined,
+      create_request_id: newRegistrationRequestId, ...registrationFields(registrationParts.new),
     });
     newRegistrationRequestId = crypto.randomUUID();
     const notice = document.querySelector("#new-registration-code");

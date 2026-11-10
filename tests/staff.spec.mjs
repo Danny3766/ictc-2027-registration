@@ -1764,7 +1764,7 @@ test("協助登記 for a child hides both surveys and requires the parent's name
   await form.locator('input[name="parent_name"]').fill(" 王爸爸 ");
   await page.getByRole("button", { name: "建立協助登記" }).click();
   await expect(page.locator("#message")).toHaveText("協助登記已建立。");
-  expect(created[0]).toMatchObject({ full_name: "王小美", is_child: true, meal_identity: "child", child_type: "elementary", parent_name: "王爸爸", hosting: null, pickup: null });
+  expect(created[0]).toMatchObject({ full_name: "王小美", meal_identity: "child", child_type: "elementary", parent_name: "王爸爸", hosting: null, pickup: null });
   // A new registration starts with no identity selected.
   await expect(form.getByRole("combobox", { name: "身分別", exact: true })).toHaveValue("");
   await expect(form.locator(".hosting-panel")).toBeHidden();
@@ -1839,7 +1839,7 @@ test("a child's record shows the parent's name read-only and can be changed back
   await expect(form.locator(".parent-name")).toBeHidden();
   await page.getByRole("button", { name: "儲存登記" }).click();
   await expect(page.locator("#message")).toHaveText("登記資料已儲存。");
-  expect(saved).toMatchObject({ is_child: false, pickup: { status: "no", count: 0 } });
+  expect(saved).toMatchObject({ child_type: "", pickup: { status: "no", count: 0 } });
   expect(saved.hosting.status).toBe("not_hosting");
   expect(saved).not.toHaveProperty("parent_name");
 });
