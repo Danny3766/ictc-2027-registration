@@ -431,7 +431,7 @@ Q43 已確認。
 - [x] 本機實作：`202611100001_child_type.sql` 新增 `child_type`（既有兒童回填國小）、保留身分 `preschool`、`child` 改名「兒童（國小）」、刪除保護改 before delete trigger、`registration_child_save` 與四個 wrapper 改收 `p_child_type`；`registration`、`staff` Edge Function 的 `validChild` 改收 `child_type`；四處表單兒童下拉與學齡前提示；後台名單篩選下拉、類型標籤、統計「其中兒童 N（學齡前 a、國小 b）」、CSV 兒童欄填類型。補資料庫驗證、Edge Function 單元測試與 Playwright。
 - [ ] 確認類型標籤色碼（學齡前粉色底、國小粉藍底）。
 - [ ] 測試專案：套用 migration、部署兩個 Edge Function、更新前端，請弟兄們測試。
-- [ ] 確定照目前設計上線後，移除前端多送的 `is_child`：`registration`、`staff` Edge Function 已改讀 `child_type`，不再讀請求裡的 `is_child`。要改的地方：`site/app.js` 的 `create` 請求，以及 `currentEditChild()` 展開進 `update` 請求的 `is_child`；`site/admin/staff.js` 的 `save_registration`、`create_registration` 請求；`tests/read-only.spec.mjs`、`tests/staff.spec.mjs` 比對請求內容的 `is_child`。查詢回應與後台名單仍用 `is_child`，不在此範圍。
+- [x] 移除前端多送的 `is_child`（2026-11-10，`refactor/remove-redundant-code`）：`registration`、`staff` Edge Function 已改讀 `child_type`，不再讀請求裡的 `is_child`。要改的地方：`site/app.js` 的 `create` 請求，以及 `currentEditChild()` 展開進 `update` 請求的 `is_child`；`site/admin/staff.js` 的 `save_registration`、`create_registration` 請求；`tests/read-only.spec.mjs`、`tests/staff.spec.mjs` 比對請求內容的 `is_child`。查詢回應與後台名單仍用 `is_child`，不在此範圍。
 - [ ] 正式站：依 9-3 與用餐身分管理一起更新。
 
 - [x] 本機完成：`202611060003_revoke_default_api_grants.sql` 撤銷 Supabase 預設給 `anon`、`authenticated` 的資料表、序列與函式權限，只保留原本刻意開放的公開讀取，並停止新物件自動授權。在模擬 Supabase 預設權限的本機資料庫驗證：私有資料表匿名不可讀、函式匿名不可執行；四支 `supabase/testing` 驗證以 `service_role` 執行通過。

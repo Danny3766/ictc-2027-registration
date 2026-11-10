@@ -219,7 +219,7 @@ export async function handler(request) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }
     if (!validDistrictFilter(body.district_id)) return response({ error: "INVALID_REQUEST" }, 400);
-    // The 兒童 filter: left out lists everyone, true lists children only, and child_type narrows them to one type.
+    // The 兒童 filter: left out lists everyone, true lists children only; one child type is a meal_identity filter.
     if (body.children_only !== undefined && body.children_only !== true) return response({ error: "INVALID_REQUEST" }, 400);
     let query = database.from("registrations")
       .select("id,serial_no,full_name,district_id,record_status,import_status,created_at,updated_at,registration_choices(activity_id,attending),meal_identity,is_child,child_type,parent_name,name_key,registration_hosting(status,guest_type,guest_count),registration_pickup(status,count)",
@@ -235,8 +235,6 @@ export async function handler(request) {
         : query.ilike("name_key", `%${nameKey(body.search).replaceAll(/[%*,()]/g, "").replaceAll(/[\\_]/g, "\\$&")}%`);
     }
     if (body.district_id != null) query = query.eq("district_id", body.district_id);
-    if (body.child_type != null && !["preschool", "elementary"].includes(body.child_type)) return response({ error: "INVALID_REQUEST" }, 400);
-    if (body.child_type) query = query.eq("child_type", body.child_type);
     if (body.meal_identity != null && !validMealIdentity(body.meal_identity)) return response({ error: "INVALID_REQUEST" }, 400);
     if (body.meal_identity) query = query.eq("meal_identity", body.meal_identity);
     if (body.children_only) query = query.eq("is_child", true);
