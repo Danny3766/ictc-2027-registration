@@ -1,5 +1,15 @@
 ﻿# ICTC 2027 登記系統 TODO
 
+## 接待調查依身分開放（2026-11-11）
+
+- [x] 記錄 Q1～Q16，沿用目前分支，見 [接待身分設定](接待身分設定.md)。
+- [x] 實作資料庫、API、後台設定、公開與代填流程、有效答案及統計匯出。
+- [x] 驗證 SQL、單元測試與跨瀏覽器流程，結果與部署順序見 [接待身分設定](接待身分設定.md)。
+- [ ] 遠端測試站：關閉登記 → `202611110003_survey_identities.sql` → registration 與 staff Edge Functions → 前端 → 驗收後恢復原開放狀態。
+- [ ] 待決定：公開頁未儲存的切出再切回，要維持清空重答，還是改成不動答案並移除 `reset` 標記；見 [接待身分設定](接待身分設定.md)「待決定」第 1 項。
+- [ ] 待決定：身分加進某題可填清單時，是否比照活動報名對象先提醒受影響人數；見 [接待身分設定](接待身分設定.md)「待決定」第 2 項。
+- [ ] 上線前以新 migration 移除已無呼叫者的舊接待流程：`registration_audience_valid`（兩個多載）、`registration_skipping_hosting`、`registration_child_save`、`registration_child_answers_put`，以及 `create_registration`、`update_registration`、`staff_create_registration`、`staff_update_registration` 中 `registration.surveys_managed` 未開啟時的接待分支（該分支比對的 `registration_hosting_get` 已多帶 `answer_valid`）；`staff_save_reception_settings` 可改由 staff Edge Function 直接呼叫 `staff_save_reference`。
+
 ## 大會匯入狀態調整（2026-11-11）
 
 - [x] 從 develop 建立 `feat/conference-import-status`，先記錄討論及 Q1～Q8 決策再實作。
