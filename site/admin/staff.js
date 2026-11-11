@@ -481,7 +481,7 @@ async function saveReference(event, kind) {
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
   if (form.dataset.editingId) data.id = form.dataset.editingId;
-  for (const name of ["is_registration_open", "is_lookup_open", "is_hosting_open", "is_pickup_open", "is_published", "is_visible"]) {
+  for (const name of ["is_registration_open", "is_lookup_open", "is_hosting_open", "is_pickup_open", "is_published", "affects_conference_import", "is_visible"]) {
     if (form.elements.namedItem(name)) data[name] = form.elements.namedItem(name).checked;
   }
   if (kind === "settings") data.registration_deadline_at = taipeiTimestamp(data.registration_deadline_at);

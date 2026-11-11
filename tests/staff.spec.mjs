@@ -288,6 +288,30 @@ async function login(page, view) {
   if (view) await go(page, view);
 }
 
+test("activity import setting loads and sends both checked and unchecked values", async ({ page }) => {
+  const saved = [];
+  await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); }, "測試登記", {
+    list_reference: () => {
+      const result = threeActivities.list_reference();
+      result.json.activities.forEach((activity) => { activity.affects_conference_import = true; });
+      return result;
+    },
+  });
+  await login(page, "活動");
+  await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).first().click();
+  const setting = page.getByLabel("影響大會匯入狀態", { exact: true });
+  await expect(setting).toBeChecked();
+  await setting.uncheck();
+  await page.locator("#activity-form").getByRole("button", { name: /^儲存活動/ }).click();
+  await expect.poll(() => saved.length).toBe(1);
+  expect(saved[0].affects_conference_import).toBe(false);
+  await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).first().click();
+  await setting.check();
+  await page.locator("#activity-form").getByRole("button", { name: /^儲存活動/ }).click();
+  await expect.poll(() => saved.length).toBe(2);
+  expect(saved[1].affects_conference_import).toBe(true);
+});
+
 test("activity sort is preserved when editing and defaults to the end when creating", async ({ page }) => {
   const saved = [];
   await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved.push(payload.data); }, "測試登記", threeActivities);

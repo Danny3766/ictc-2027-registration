@@ -295,7 +295,7 @@ export async function handler(request) {
     const [settings, districts, activities, program, identities, usedIdentities] = await Promise.all([
       database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_lookup_open,is_hosting_open,hosting_description,is_pickup_open,pickup_description").single(),
       database.from("districts").select("id,name,sort_order").order("sort_order"),
-      database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,student_fee_amount,activity_identity_prices(identity_code,fee_amount),cost_amount,audience,audience_note,is_published,sort_order").order("sort_order"),
+      database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,student_fee_amount,activity_identity_prices(identity_code,fee_amount),cost_amount,audience,audience_note,is_published,affects_conference_import,sort_order").order("sort_order"),
       database.from("program_items").select("id,event_date,start_time,end_time,title,note,sort_order,is_visible").order("sort_order"),
       database.from("registration_identities").select("code,name,is_active,public_selectable,show_badge,badge_color").order("sort_order"),
       database.rpc("registration_used_identity_codes"),
