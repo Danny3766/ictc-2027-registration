@@ -58,7 +58,11 @@
           <form id="search-form" class="staff-search inline-form">
             <label>姓名或流水號<input name="search" maxlength="100" /></label>
             <label>區<select name="district_id"><option value="">全部區</option></select></label>
-            <label>身分別<select name="identity_filter"><option value="">全部身分</option></select></label>
+            <div class="identity-filter"><span id="identity-filter-title">身分別</span>
+              <details><summary aria-describedby="identity-filter-title">全部身分</summary>
+                <div class="identity-filter-menu" role="group" aria-labelledby="identity-filter-title"></div>
+              </details>
+            </div>
             <button type="submit">搜尋</button>
             <button id="clear-search" type="button" class="secondary" disabled>清除條件</button>
           </form>
