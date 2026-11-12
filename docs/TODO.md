@@ -6,7 +6,7 @@
 - [x] 實作依排序的多選篩選、「未填身分」，並調整 staff Edge Function 的 `meal_identities` 篩選。手機版清單原位展開，不遮住「搜尋」。
 - [x] 本機驗證：`staff`、`identities`、`survey-identities`、`read-only` 四個測試檔在桌機／手機 Chromium 與 WebKit 共 570 項通過、18 項既有略過；staff helpers 單元測試 13 項通過。PostgREST 篩選尚未對真實資料庫驗證，於測試站驗收。
 - [ ] 測試站部署：staff Edge Function → 前端。不需 migration。
-- [ ] 下一個討論：統計學生人數與學生價格只認代碼 `student`，自訂學生身分不計入。
+- [ ] 統計各身分人數：Q1、Q2 已定，Q3～Q8 待決定，見 [需求討論與決策紀錄](需求討論與決策紀錄.md)「統計各身分人數」。
 
 ## 公開表單缺漏欄位提示與訊息位置（2026-11-12）
 
