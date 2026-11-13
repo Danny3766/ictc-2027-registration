@@ -52,6 +52,12 @@ test("missing fields are listed between the schedule and forms and clear as they
   ])).toEqual(["program-section", "registration-service"]);
   await expect(page.locator('#registration-form select[name="district_id"]')).toHaveAttribute("aria-invalid", "true");
   await expect(page.locator('#registration-form select[name="district_id"]')).toHaveCSS("border-top-color", "rgb(165, 40, 40)");
+  const activity = page.locator("#registration-form .activity");
+  await expect(activity).toHaveClass(/field-invalid/);
+  await expect(activity).toHaveCSS("outline-color", "rgb(165, 40, 40)");
+  await expect(activity.locator("strong")).toHaveCSS("color", "rgb(36, 48, 43)");
+  await activity.locator('input[value="false"]').check();
+  await expect(activity).not.toHaveClass(/field-invalid/);
   expect(requests).toHaveLength(0);
 
   await page.getByRole("tab", { name: "查詢或修改登記" }).click();
@@ -338,6 +344,44 @@ test("an unanswered activity stays explicit until the registrant chooses", async
   await expect(page.getByRole("button", { name: "儲存修改" })).toBeDisabled();
   await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
   await expect(page.getByRole("button", { name: "儲存修改" })).toBeEnabled();
+});
+
+test("missing activity in an edit is outlined until answered", async ({ page }) => {
+  await page.route("**/functions/v1/registration", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: {
+      ...openPage(), activities: [
+        { id: 1, title: "第一項活動" }, { id: 2, title: "第二項活動" }, { id: 3, title: "第三項活動" },
+      ],
+    } });
+    return route.fulfill({ json: {
+      ...queried(true), choices: [
+        { activity_id: 1, title: "第一項活動", attending: null },
+        { activity_id: 2, title: "第二項活動", attending: null },
+        { activity_id: 3, title: "第三項活動", attending: true },
+      ],
+    } });
+  });
+
+  await page.goto("/");
+  await query(page);
+  await page.getByRole("button", { name: "修改登記內容" }).click();
+  await page.locator('#edit-form input[name="activity_3"][value="false"]').check();
+  const first = page.locator('#edit-form .activity[data-activity="1"]');
+  const second = page.locator('#edit-form .activity[data-activity="2"]');
+  const titleX = (await first.locator("strong").boundingBox()).x;
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(first).toHaveClass(/field-invalid/);
+  await expect(second).toHaveClass(/field-invalid/);
+  // Adjacent frames stay inside their own blocks, and the text does not shift.
+  await expect(first).toHaveCSS("outline-offset", "-3px");
+  expect((await first.locator("strong").boundingBox()).x).toBe(titleX);
+  await expect(first).toHaveCSS("outline-color", "rgb(165, 40, 40)");
+  await expect(first.locator("strong")).toHaveCSS("color", "rgb(36, 48, 43)");
+  await second.locator('input[value="false"]').check();
+  await expect(second).not.toHaveClass(/field-invalid/);
+  await expect(first).toHaveClass(/field-invalid/);
+  await first.locator('input[value="true"]').check();
+  await expect(first).not.toHaveClass(/field-invalid/);
 });
 
 test("temporary save errors keep edits while a closed registration returns to confirmation", async ({ page }) => {
