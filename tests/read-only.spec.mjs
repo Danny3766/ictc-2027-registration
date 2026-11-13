@@ -241,6 +241,10 @@ test("query is read-only until editing and returns to confirmation after saving"
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
   await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
   await page.getByRole("button", { name: "修改登記內容" }).click();
+  await expect(page.locator('#query-form input[name="full_name"]')).toBeDisabled();
+  await expect(page.locator('#query-form select[name="district_id"]')).toBeDisabled();
+  await expect(page.getByRole("button", { name: "查詢" })).toBeDisabled();
+  await expect(page.locator('#query-form input[name="full_name"]')).toHaveCSS("background-color", "rgb(238, 243, 240)");
   const attending = page.locator('#edit-form input[name="activity_1"][value="true"]');
   const notAttending = page.locator('#edit-form input[name="activity_1"][value="false"]');
   const save = page.getByRole("button", { name: "儲存修改" });
@@ -261,10 +265,13 @@ test("query is read-only until editing and returns to confirmation after saving"
   await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：不參加");
   await expect(page.getByRole("button", { name: "修改登記內容" })).toBeVisible();
+  await expect(page.locator('#query-form input[name="full_name"]')).toBeEnabled();
+  await expect(page.locator('#query-form select[name="district_id"]')).toBeEnabled();
+  await expect(page.getByRole("button", { name: "查詢" })).toBeEnabled();
   expect(requests.map(({ action }) => action)).toEqual(["query", "update"]);
 });
 
-test("cancel, tab changes, and another query protect unsaved edits", async ({ page }) => {
+test("cancel and tab changes protect unsaved edits, then another query is available", async ({ page }) => {
   const requests = [];
   await page.route("**/functions/v1/registration", async (route) => {
     if (route.request().method() === "GET") return route.fulfill({ json: openPage() });
@@ -286,9 +293,7 @@ test("cancel, tab changes, and another query protect unsaved edits", async ({ pa
   await page.getByRole("tab", { name: "登記參加" }).click();
   await expect(page.getByRole("tab", { name: "查詢或修改登記" })).toHaveAttribute("aria-selected", "true");
 
-  await page.locator('#query-form input[name="full_name"]').fill("另一個人");
-  page.once("dialog", async (dialog) => dialog.dismiss());
-  await page.getByRole("button", { name: "查詢" }).click();
+  await expect(page.getByRole("button", { name: "查詢" })).toBeDisabled();
   expect(requests).toHaveLength(1);
   await expect(page.locator('#edit-form input[name="activity_1"][value="false"]')).toBeChecked();
   expect(await page.evaluate(() => window.dispatchEvent(new Event("beforeunload", { cancelable: true })))).toBe(false);
@@ -297,6 +302,7 @@ test("cancel, tab changes, and another query protect unsaved edits", async ({ pa
   await page.getByRole("button", { name: "取消修改" }).click();
   await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
+  await expect(page.getByRole("button", { name: "查詢" })).toBeEnabled();
 
   await page.getByRole("button", { name: "修改登記內容" }).click();
   await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
@@ -308,7 +314,10 @@ test("cancel, tab changes, and another query protect unsaved edits", async ({ pa
 
   await page.getByRole("button", { name: "修改登記內容" }).click();
   await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
+  await expect(page.getByRole("button", { name: "查詢" })).toBeDisabled();
   page.once("dialog", async (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "取消修改" }).click();
+  await page.locator('#query-form input[name="full_name"]').fill("另一個人");
   await page.getByRole("button", { name: "查詢" }).click();
   await expect.poll(() => requests.length).toBe(2);
   await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
@@ -352,12 +361,16 @@ test("temporary save errors keep edits while a closed registration returns to co
   await expect(page.locator("#page-message")).toHaveText("服務暫時無法使用");
   await expect(notAttending).toBeChecked();
   await expect(page.getByRole("button", { name: "儲存修改" })).toBeEnabled();
+  await expect(page.locator('#query-form input[name="full_name"]')).toBeDisabled();
+  await expect(page.locator('#query-form select[name="district_id"]')).toBeDisabled();
+  await expect(page.getByRole("button", { name: "查詢" })).toBeDisabled();
 
   await page.getByRole("button", { name: "儲存修改" }).click();
   await expect(page.locator("#page-message")).toHaveText("登記已截止，資料只能查看");
   await expect(page.locator("#edit-form input[type=radio]")).toHaveCount(0);
   await expect(page.locator("#edit-activities")).toContainText("登記狀態：參加");
   await expect(page.getByRole("button", { name: "修改登記內容" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "查詢" })).toBeEnabled();
 });
 
 test("starting a new query prevents the previous form from being saved", async ({ page }) => {
