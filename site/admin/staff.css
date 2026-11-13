@@ -36,6 +36,7 @@ textarea { width: 100%; min-height: 6rem; padding: .65rem .75rem; border: 1px so
 .staff-form legend { margin-bottom: .25rem; font-weight: 600; }
 .inline-form { grid-template-columns: minmax(0, 1fr) auto; align-items: end; max-width: 40rem; }
 .inline-form > button { margin-top: 0; }
+#student-statistics-identity-form { margin-bottom: 1.5rem; }
 #search-form { grid-template-columns: minmax(0, 1fr) minmax(0, 10rem) minmax(0, 13rem) auto auto; max-width: 56rem; }
 /* A select renders a little shorter than an input; filling the row keeps both labels and boxes level. */
 #search-form > label, .identity-filter { align-self: stretch; grid-template-rows: auto 1fr; }
@@ -143,9 +144,12 @@ main.wide .compact-form { max-width: none; }
 /* The four summary cards: two a row on wide screens, one on phones; their short cells stay on one line. */
 .summary-stat-cards { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
 .summary-stat-cards :is(th, td) { white-space: nowrap; }
+/* 各區 has five columns: on phones its cells wrap instead of scrolling sideways. */
+.summary-stat-cards table:has(#district-stats-rows) :is(th, td) { white-space: normal; }
 /* 各區各活動: three cards a row on wide screens, so 全會所 and four districts read as 3 + 2; phones keep one a row. */
 @media (min-width: 56rem) {
   .summary-stat-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summary-stat-cards table:has(#district-stats-rows) :is(th, td) { white-space: nowrap; }
   #district-activity-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 tr.total td { border-top: 2px solid #c9d4ce; background: #f6f9f7; font-weight: 700; }

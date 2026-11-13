@@ -474,6 +474,7 @@ function renderReference() {
   renderSurveyIdentities();
   setAudienceOptions(document.querySelector("#activity-form").dataset.editingId);
   renderIdentities();
+  renderStudentStatisticsIdentity();
   renderIdentityPrices();
   renderReferenceRows();
   renderNewRegistrationForm();
@@ -627,8 +628,9 @@ function currentActivities() {
 // Fold anonymous database counts once; work depends on categories, not the number of registrations.
 function summarizeStatistics(data, activities) {
   const emptyFee = () => ({ sum: 0, known: 0, unset: [] });
+  const studentIdentity = reference.settings.student_statistics_identity_code;
   const activityMap = new Map(activities.map((activity) => [activity.id, activity]));
-  const group = () => ({ count: 0, children: {}, fee: emptyFee(), noIdentity: 0, activities: new Map(
+  const group = () => ({ count: 0, students: 0, children: {}, fee: emptyFee(), noIdentity: 0, activities: new Map(
     activities.map((activity) => [activity.id, { yes: 0, no: 0, students: 0, children: {}, outside: 0, fee: emptyFee() }])) });
   const total = group();
   const districts = new Map(reference.districts.map((district) => [district.id, group()]));
@@ -637,6 +639,7 @@ function summarizeStatistics(data, activities) {
     for (const target of [total, districts.get(row.district_id)].filter(Boolean)) {
       target.count += row.count;
       target.noIdentity += row.no_identity;
+      if (studentIdentity && row.meal_identity === studentIdentity) target.students += row.count;
       addChildren(target.children, row.child_type, row.count);
     }
   }
@@ -648,7 +651,7 @@ function summarizeStatistics(data, activities) {
       const answer = target.activities.get(row.activity_id);
       answer[row.attending ? "yes" : "no"] += row.count;
       if (!row.attending) continue;
-      if (row.meal_identity === "student") answer.students += row.count;
+      if (studentIdentity && row.meal_identity === studentIdentity) answer.students += row.count;
       if (!row.eligible) answer.outside += row.count;
       addChildren(answer.children, row.child_type, row.count);
       for (const fee of [target.fee, answer.fee]) {
@@ -666,6 +669,8 @@ async function showStatistics() {
   const { statistics } = await api("registration_statistics");
   const activities = currentActivities();
   const { total: overall, districts } = summarizeStatistics(statistics, activities);
+  const hasStudentIdentity = Boolean(reference.settings.student_statistics_identity_code);
+  document.querySelector("#student-statistics-hint").hidden = hasStudentIdentity;
   const rows = document.querySelector("#stats-rows");
   rows.replaceChildren();
   const total = { cost: 0, subsidy: { sum: 0, known: 0, unset: [] } };
@@ -686,8 +691,7 @@ async function showStatistics() {
     }
     const restricted = answer.outside;
     if (restricted) outside.push(`${activity.title} ${restricted} 人`);
-    const students = Meals.hasStudentPrice(activity)
-      ? answer.students : "—";
+    const students = hasStudentIdentity ? answer.students : "—";
     const row = document.createElement("tr");
     for (const value of [activity.title, attending, students]) cell(row, value);
     childrenCell(row, answer.children);
@@ -717,12 +721,14 @@ async function showStatistics() {
   for (const district of reference.districts) {
     const people = districts.get(district.id);
     const row = document.createElement("tr");
-    cell(row, district.name); cell(row, people.count); childrenCell(row, people.children); cell(row, amountText(people.fee));
+    cell(row, district.name); cell(row, people.count); cell(row, hasStudentIdentity ? people.students : "—");
+    childrenCell(row, people.children); cell(row, amountText(people.fee));
     districtRows.append(row);
     districtCards.push(districtActivityCard(district, people, activities));
   }
   const districtSum = document.createElement("tr"); districtSum.className = "total";
-  cell(districtSum, "合計"); cell(districtSum, overall.count); childrenCell(districtSum, overall.children);
+  cell(districtSum, "合計"); cell(districtSum, overall.count); cell(districtSum, hasStudentIdentity ? overall.students : "—");
+  childrenCell(districtSum, overall.children);
   cell(districtSum, amountText(overall.fee)); districtRows.append(districtSum);
   document.querySelector("#district-activity-cards").replaceChildren(...districtCards);
   showHostingStatistics(statistics, overall.count);
@@ -827,6 +833,9 @@ function appendStatisticsTable(rows, title, table, note = "") {
 async function downloadStatisticsCsv() {
   await showStatistics();
   const rows = [["統計摘要"], [document.querySelector("#stats-summary").textContent], []];
+  if (!document.querySelector("#student-statistics-hint").hidden) {
+    rows.push([document.querySelector("#student-statistics-hint").textContent], []);
+  }
   for (const [title, selector, noteSelector] of [
     ["各活動", "#stats-rows"], ["各區", "#district-stats-rows"],
     ["開家接待回覆", "#hosting-status-stats-rows", "#hosting-status-note"], ["接待對象", "#hosting-capacity-stats-rows"],
@@ -1229,6 +1238,33 @@ const identityPricesFrom = (form) => [...form.querySelectorAll("[data-identity-p
 // 一般 and both 兒童 identities are reserved: keep them active and publicly selectable.
 const reservedIdentity = (code) => ["general", "child", "preschool"].includes(code);
 
+function renderStudentStatisticsIdentity() {
+  const select = document.querySelector('#student-statistics-identity-form [name="code"]');
+  const selected = reference.settings.student_statistics_identity_code ?? "";
+  select.replaceChildren(new Option("未指定", ""));
+  for (const identity of reference.identities ?? []) {
+    if ((identity.is_active && !reservedIdentity(identity.code)) || identity.code === selected) {
+      select.add(new Option(`${identity.name}${identity.is_active ? "" : "（已停用）"}`, identity.code));
+    }
+  }
+  select.value = selected;
+}
+
+document.querySelector("#student-statistics-identity-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    await api("save_reference", { kind: "student_statistics_identity", data: { code: form.elements.code.value || null } });
+    reference = await api("list_reference");
+    renderStudentStatisticsIdentity();
+    if (document.querySelector("#district-stats-rows").children.length) await showStatistics();
+    showMessage("學生統計身分已儲存。");
+  } catch (error) { showMessage(error.message, true); }
+  finally { button.disabled = false; }
+});
+
 function renderIdentities() {
   if (document.querySelector("#admin-identities").classList.contains("reordering")) return;
   const rows = document.querySelector("#identity-rows");
@@ -1376,6 +1412,7 @@ function setIdentityReordering(on) {
 function redrawIdentities() {
   Meals.configure(reference.identities, true, reference.settings);
   renderIdentities();
+  renderStudentStatisticsIdentity();
   renderSurveyIdentities(true);
   // Prices typed into an open activity form survive the redraw of its fields.
   renderIdentityPrices({ activity_identity_prices: identityPricesFrom(document.querySelector("#activity-form")) });

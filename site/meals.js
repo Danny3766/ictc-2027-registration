@@ -211,7 +211,7 @@ const Meals = (() => {
   const revertedCount = (container) => container.querySelectorAll("input[data-reverted]").length;
 
   return {
-    configure, identityLabels, childType, answersHosting, renderIdentity, renderIdentityFilter, hasStudentPrice, eligible, fee, addFees, needsIdentity, priceText, feeText, mapUrl, activityTime,
+    configure, identityLabels, childType, answersHosting, renderIdentity, renderIdentityFilter, eligible, fee, addFees, needsIdentity, priceText, feeText, mapUrl, activityTime,
     render, sync, choices, readIdentity, revertedCount,
   };
 })();

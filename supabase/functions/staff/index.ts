@@ -301,7 +301,7 @@ export async function handler(request) {
 
   if (body.action === "list_reference" || body.action === "me" && body.include_reference) {
     const [settings, districts, activities, program, identities, usedIdentities] = await Promise.all([
-      database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_lookup_open,is_hosting_open,hosting_description,is_pickup_open,pickup_description,hosting_identity_codes,pickup_identity_codes").single(),
+      database.from("site_settings").select("event_name,venue,address,event_note,registration_deadline_at,is_registration_open,is_lookup_open,is_hosting_open,hosting_description,is_pickup_open,pickup_description,hosting_identity_codes,pickup_identity_codes,student_statistics_identity_code").single(),
       database.from("districts").select("id,name,sort_order").order("sort_order"),
       database.from("activities").select("id,category,title,starts_at,starts_at_has_time,ends_at,ends_at_has_time,venue,address,map_url,description,fee_amount,student_fee_amount,activity_identity_prices(identity_code,fee_amount),cost_amount,audience,audience_note,is_published,affects_conference_import,sort_order").order("sort_order"),
       database.from("program_items").select("id,event_date,start_time,end_time,title,note,sort_order,is_visible").order("sort_order"),
@@ -426,7 +426,7 @@ export async function handler(request) {
 
   if (body.action === "save_reference") {
     // Districts are fixed: renaming one would break the name + district lookup of existing registrations.
-    if (!["settings", "hosting", "activity", "program", "identity", "delete_identity"].includes(body.kind)
+    if (!["settings", "hosting", "activity", "program", "identity", "delete_identity", "student_statistics_identity"].includes(body.kind)
       || !body.data || typeof body.data !== "object" || Array.isArray(body.data)) {
       return response({ error: "INVALID_REQUEST" }, 400);
     }
@@ -437,6 +437,12 @@ export async function handler(request) {
       if (lostAccess(error)) return lostAccessResponse();
       if (error.message?.includes("IDENTITY_IN_SURVEY_TARGETS")) {
         return response({ error: "此身分已設為接待調查可填身分，請先在開家與接機接待設定取消勾選" }, 400);
+      }
+      if (error.message?.includes("IDENTITY_IN_STUDENT_STATISTICS")) {
+        return response({ error: "此身分已設為學生統計身分，請先改選或清除指定" }, 400);
+      }
+      if (error.message?.includes("INVALID_STUDENT_STATISTICS_IDENTITY")) {
+        return response({ error: "請選擇啟用中的非保留身分" }, 400);
       }
       // 23503: a registration took the identity between the check and the delete.
       if (error.message?.includes("IDENTITY_IN_USE") || (body.kind === "delete_identity" && error.code === "23503")) {
