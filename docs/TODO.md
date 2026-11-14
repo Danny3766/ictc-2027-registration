@@ -36,6 +36,15 @@
   - 公開查詢頁修改時鎖定查詢欄位、漏選活動紅框（PR #58）：[需求討論與決策紀錄](需求討論與決策紀錄.md)「2026-11-13 公開查詢頁修改時鎖定查詢欄位」「2026-11-13 公開頁漏選活動的紅框提示」。
 - [ ] 確認兒童類型標籤色碼（學齡前粉色底、國小粉藍底）。
 
+## 進行中：後台登記詳情的唯讀樣式（`fix/admin-detail-readability`）
+
+決策見[需求討論與決策紀錄](需求討論與決策紀錄.md)「2026-11-14 後台登記詳情的唯讀樣式」。
+
+- [x] 從 `develop` 建立分支，先記錄決策。
+- [x] 登記詳情查看狀態：選中的答案改實心膠囊（參加、是、家人已登記用綠色，不參加、否用深灰色），沒選的淡化；姓名、區、身分別改深色文字；未回覆的活動顯示「未回覆」標籤。圓點只做視覺隱藏，螢幕報讀器仍讀得到選中的答案。編輯狀態不變。`openRegistration()` 在查看時替表單加上 `viewing` class，樣式只在這個 class 下生效。
+- [x] `tests/staff.spec.mjs`「editing an old registration leaves a newer activity unanswered」補查看與編輯兩種狀態的樣式檢查，並確認查看時選中的 radio 仍可由 role 找到且為已選，桌機／手機 Chromium 與 WebKit 共 4 項通過。`staff`、`read-only`、`identities`、`survey-identities` 在 desktop-chromium 共 150 項，149 項通過；「the 身分別 checklist filters…」整批平行執行時版面量測失敗，未改動的程式碼同樣失敗，單獨重跑 3 次通過。已檢視桌機與手機 Chromium 截圖：開家「是」與接待人數、家人已登記、接機否、編輯狀態。
+- [ ] 送 PR 至 `develop`，測試站只需發布前端。
+
 ## 正式站：下一次發布（`develop` → `main`）
 
 含 migration，依[正式環境設定流程](正式環境setup.md) 9-3 關閉登記後更新。測試站驗收通過才執行。
