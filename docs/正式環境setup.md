@@ -1,5 +1,7 @@
 # 正式環境 Supabase 設定流程
 
+> 2026-11-09 價格修訂：所有身分空白價格均為未設定，不沿用一般價；0 才表示免費。費用合計／補貼只加總已設定的價格，並註明未計入的身分。請追加套用 `202611090003_independent_identity_prices.sql`，解除一般價依賴；本段取代舊版價格回退規則。
+
 > 適用範圍：建立正式環境的 Supabase、GitHub Variables，並把 GitHub Pages 切換到正式環境。完成後登記仍維持關閉。
 > 驗收、備份還原與開放登記不在本文件範圍，請見 [TODO](TODO.md) 第 4、5 節與 [驗收紀錄](驗收紀錄.md)。
 > 部署方式：一律使用 Supabase Dashboard，不使用 CLI。
@@ -347,7 +349,7 @@ feat/*（功能開發） → PR → develop（整合，不部署） → PR → m
 更新內容包含 migration 或 Edge Function 時，新舊版本會有一段不一致的空窗，依序執行：
 
 1. 通知服事者「正式站維護中，暫停登記」，在後台網站設定關閉登記（`is_registration_open = false`）。
-2. 在正式專案的 SQL Editor 逐支執行新的 migration，每支在第 3 節的表格新增一列。
+2. 在正式專案的 SQL Editor 逐支執行新的 migration，每支在第 3 節的表格新增一列。一次累積多支時，可改執行 `supabase/production/release_<最後一支編號>.sql` 合併檔，產生方式與 baseline 相同，在第 3 節記一列。
 3. 重新部署有變更的 Edge Function。
 4. 合併 `develop` → `main` 的 PR，等前端部署完成。
 5. 依第 7-4、8 節核對，並驗收這次的變更。

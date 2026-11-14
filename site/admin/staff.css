@@ -36,9 +36,23 @@ textarea { width: 100%; min-height: 6rem; padding: .65rem .75rem; border: 1px so
 .staff-form legend { margin-bottom: .25rem; font-weight: 600; }
 .inline-form { grid-template-columns: minmax(0, 1fr) auto; align-items: end; max-width: 40rem; }
 .inline-form > button { margin-top: 0; }
-#search-form { grid-template-columns: minmax(0, 1fr) minmax(0, 10rem) auto auto; max-width: 52rem; }
+#student-statistics-identity-form { margin-bottom: 1.5rem; }
+#search-form { grid-template-columns: minmax(0, 1fr) minmax(0, 10rem) minmax(0, 13rem) auto auto; max-width: 56rem; }
 /* A select renders a little shorter than an input; filling the row keeps both labels and boxes level. */
-#search-form label { align-self: stretch; grid-template-rows: auto 1fr; }
+#search-form > label, .identity-filter { align-self: stretch; grid-template-rows: auto 1fr; }
+/* The 身分別 multi-select: a box styled like the other selects that opens a checklist over the rows below. */
+.identity-filter { display: grid; gap: .3rem; position: relative; min-width: 0; }
+.identity-filter details { min-width: 0; }
+.identity-filter summary { display: block; min-height: 2.75rem; margin-top: .35rem; padding: .65rem 2rem .65rem .75rem;
+  border: 1px solid #9caaa3; border-radius: .5rem; background: #fff; cursor: pointer; list-style: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; position: relative; }
+.identity-filter summary::-webkit-details-marker { display: none; }
+.identity-filter summary::after { content: "▾"; position: absolute; right: .75rem; }
+.identity-filter-menu { position: absolute; z-index: 20; left: 0; min-width: 100%; max-height: 20rem; overflow-y: auto;
+  margin-top: .25rem; padding: .35rem 0; border: 1px solid #9caaa3; border-radius: .5rem; background: #fff; box-shadow: 0 4px 12px rgb(0 0 0 / .12); }
+.identity-filter-menu label.check { display: flex; padding: .45rem .75rem; white-space: nowrap; cursor: pointer; }
+.identity-filter-menu label.check:hover { background: #eef3f0; }
+.identity-filter-menu label.check:first-child { border-bottom: 1px solid #e5ebe8; }
 .staff-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 1rem 0; }
 .staff-actions button { margin-top: 0; }
 .pager { justify-content: center; }
@@ -67,11 +81,7 @@ main.wide .registration-form { max-width: none; }
 .staff-choice > label:nth-of-type(1) { grid-area: 1 / 2; }
 .staff-choice > label:nth-of-type(2) { grid-area: 1 / 3; }
 .staff-choice > :not(strong, label) { grid-column: 1 / -1; margin: 0; font-size: .85rem; }
-.staff-choice label, .activity-panel .meal-identity label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; }
-.activity-panel .meal-identity { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 1.25rem;
-  padding: .45rem 0; }
-.activity-panel .meal-identity .activity-options { grid-area: 1 / 2; gap: 0 1.25rem; }
-.activity-panel .meal-identity .hint { grid-column: 1 / -1; margin: 0; font-size: .85rem; }
+.staff-choice label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; }
 
 /* min-height keeps the form from jumping up when 修改登記資料 hides during an edit. */
 .detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem;
@@ -92,16 +102,37 @@ main.wide .registration-form { max-width: none; }
    input does not push its neighbours down. */
 main.wide .compact-form { max-width: none; }
 .field-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .75rem 1rem; }
+.activity-pricing-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(14rem, 1fr); gap: 1.5rem; }
+.activity-pricing-layout h3 { margin: 0 0 1rem; }
+.activity-price-table { border: 1px solid #d8e1dc; border-radius: .6rem; overflow: hidden; }
+.activity-price-header, .staff-form .activity-price-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem; padding: .75rem 1rem; align-items: center; }
+.activity-price-header { background: #f4f7f5; color: #59655f; font-size: .85rem; }
+.staff-form .activity-price-row { border-top: 1px solid #e3e9e5; }
+.activity-price-row input { margin: 0; min-width: 0; }
+.activity-price-row .field-hint { display: block; }
+.activity-price-settings { background: #f4f7f5; padding: 1.25rem; border-radius: .6rem; align-self: start; }
+.activity-price-settings label + label { margin-top: 1rem; }
+@media (max-width: 700px) { .activity-pricing-layout { grid-template-columns: minmax(0, 1fr); } }
 /* 12rem: two plain fields need more than the widest phone (about 412px), so phones get one per line. */
 .field-row > * { flex: 1 1 12rem; min-width: 0; }
 .field-row > .grow { flex-grow: 2.5; }
 .field-row > .pair { flex-basis: 7rem; }
+/* A color picker only needs room for its swatch, not a whole field's width. */
+.field-row > .swatch { flex: 0 0 auto; }
+.swatch input[type="color"] { width: 4rem; padding: .2rem; cursor: pointer; }
 /* Date and time inputs have a built-in minimum width that would spill into the next field. */
 .field-row input, .field-row select { min-width: 0; }
 /* A check box sits level with the inputs beside it (label text plus its gap above each input). */
 .field-row > label.check { flex: 0 1 auto; margin-top: 2.6rem; }
 .field-row.checks > label.check { margin-top: 0; }
 .field-row > button { flex: 0 0 auto; align-self: flex-end; margin-top: 0; }
+/* Keep the two identity actions together when the fields wrap; HEX needs only seven characters. */
+#identity-form .identity-color-hex { flex: 0 1 7rem; }
+#identity-form .identity-actions { flex: 0 1 auto; align-self: flex-end; flex-wrap: nowrap; }
+#identity-form .identity-actions button { min-width: 0; }
+@media (max-width: 700px) {
+  #identity-form .identity-actions { flex-basis: 100%; }
+}
 .field-hint { color: #59655f; font-size: .8rem; line-height: 1.4; }
 .card h3 + .compact-form { margin-top: .5rem; }
 
@@ -110,8 +141,15 @@ main.wide .compact-form { max-width: none; }
 .stat-cards .table-scroll { margin: 0; }
 /* A narrow card fits its three or four columns: tighter cells, and headers and names may wrap. */
 .stat-cards :is(th, td) { padding-inline: .4rem; white-space: normal; }
+/* The four summary cards: two a row on wide screens, one on phones; their short cells stay on one line. */
+.summary-stat-cards { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+.summary-stat-cards :is(th, td) { white-space: nowrap; }
+/* 各區 has five columns: on phones its cells wrap instead of scrolling sideways. */
+.summary-stat-cards table:has(#district-stats-rows) :is(th, td) { white-space: normal; }
 /* 各區各活動: three cards a row on wide screens, so 全會所 and four districts read as 3 + 2; phones keep one a row. */
 @media (min-width: 56rem) {
+  .summary-stat-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summary-stat-cards table:has(#district-stats-rows) :is(th, td) { white-space: nowrap; }
   #district-activity-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 tr.total td { border-top: 2px solid #c9d4ce; background: #f6f9f7; font-weight: 700; }
@@ -121,6 +159,14 @@ table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nu
 th, td { padding: .55rem .65rem; border-bottom: 1px solid #e1e8e4; text-align: left; vertical-align: middle; white-space: nowrap; }
 th { color: #59655f; background: #f6f9f7; font-size: .9rem; font-weight: 600; }
 tbody tr:hover { background: #f9fbfa; }
+/* A parent's record lists the children naming them; each name opens that child's record. */
+.detail-children ul { margin: .35rem 0 0; padding: 0; list-style: none; }
+.detail-children li { margin: .2rem 0; }
+.link-button { width: auto; min-height: 0; margin: 0; padding: 0; border: 0; color: #23624b; background: none;
+  font-weight: 600; text-align: left; text-decoration: underline; cursor: pointer; }
+.link-button:hover, .link-button:focus-visible { color: #174634; background: none; }
+/* The 親子 note above the list stands out so staff read how the column works. */
+.family-hint { padding: .6rem .85rem; border-left: 4px solid #8a7d6e; border-radius: .5rem; color: #3d3832; background: #f3f1ee; }
 td button { min-height: 2rem; margin: 0 .4rem 0 0; padding: .25rem .8rem; color: #23624b; background: #fff; font-size: .9rem; }
 td button:hover { background: #e8f1ec; }
 table.numeric td:not(:first-child), table.numeric th:not(:first-child) { text-align: right; }
@@ -139,14 +185,20 @@ table.numeric td:not(:first-child), table.numeric th:not(:first-child) { text-al
 .reordering .activity-details summary { list-style: none; cursor: default; }
 .reordering .activity-details summary::-webkit-details-marker { display: none; }
 
-/* Activity reorder: the last column's header holds 調整排序 (and 取消 while reordering); its ☰ handles
-   show only while reordering. touch-action keeps a finger drag from scrolling the page on phones. */
-#admin-activities { position: relative; }
+/* Activity reorder: the last column's header holds 調整排序 (and 取消 beside it while reordering); its
+   cells show each activity's order number, and the ☰ handles in their place only while reordering.
+   touch-action keeps a finger drag from scrolling the page on phones. */
+:is(#admin-activities, #admin-identities) { position: relative; }
 .reorder-col { width: 1%; text-align: right; }
-.reorder-buttons { display: flex; flex-direction: column; align-items: flex-end; gap: .35rem; }
+td.reorder-col { text-align: center; }
+.reordering .sort-number { display: none; }
+/* The hidden 排序 label is placed against the card, not the scroll box; left: 0 keeps a wide table from
+   pushing it past the card and widening the page on phones. */
+th.reorder-col .visually-hidden { left: 0; }
+.reorder-buttons { display: flex; justify-content: flex-end; gap: .35rem; }
 th .reorder-buttons button { min-height: 2rem; margin: 0; padding: .25rem .8rem; font-size: .9rem; white-space: nowrap; }
 td .drag-handle { display: none; min-height: 2.5rem; min-width: 2.5rem; padding: 0; border: 0; background: transparent;
-  color: #59655f; font-size: 1.3rem; cursor: grab; touch-action: none; }
+  color: #59655f; font-size: 1.3rem; cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
 .reordering td .drag-handle { display: inline-block; }
 td .drag-handle:hover, td .drag-handle:focus-visible { background: #e8f1ec; }
 tr.dragging { background: #e8f1ec; box-shadow: 0 .25rem .75rem #173c2d26; }
@@ -172,17 +224,44 @@ tr.dragging .drag-handle { cursor: grabbing; }
   .inline-form { grid-template-columns: 1fr; }
   /* Fields stack; 搜尋 and 清除條件 share the last row. */
   #search-form { grid-template-columns: 1fr 1fr; }
-  #search-form label { grid-column: 1 / -1; }
+  #search-form > label, .identity-filter { grid-column: 1 / -1; }
+  /* On phones the list opens in place and pushes 搜尋 down, so it never covers the buttons. */
+  .identity-filter-menu { position: static; }
+  .identity-filter-menu label.check { white-space: normal; }
   .staff-nav { position: static; }
   th, td { padding: .45rem .4rem; }
   /* The update time column is the least useful on a phone; hiding it keeps name and action visible. */
   #registration-table th:nth-child(6), #registration-table td:nth-child(6) { display: none; }
   /* The header cell scrolls sideways with the table, so on phones the buttons sit beside the 活動 title
      (absolute to the section, which the table's scroll box does not clip). */
-  #admin-activities .reorder-buttons { position: absolute; top: 2.3rem; right: 1.25rem; flex-direction: row; }
+  :is(#admin-activities, #admin-identities) .reorder-buttons { position: absolute; top: 2.3rem; right: 1.25rem; }
   /* While reordering on a phone, keep only name, type and ☰ so the handle stays on screen
      (time, published and the disabled edit button are not needed to pick an order). */
   #admin-activities.reordering :is(th, td):nth-child(3),
   #admin-activities.reordering :is(th, td):nth-child(4),
   #admin-activities.reordering :is(th, td):nth-child(5) { display: none; }
+  /* Identities likewise keep only the name and ☰. */
+  #admin-identities.reordering :is(th, td):nth-child(n+2):nth-child(-n+5) { display: none; }
 }
+
+.activity-panel .staff-choice { grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem; }
+
+/* 登記詳情 view mode: disabled fields keep dark text, the chosen answer becomes a filled pill
+   (參加／是／家人已登記 green, 不參加／否 grey), and the others fade. Editing is untouched. */
+.unanswered-tag { display: none; }
+#edit-registration-form.viewing :is(input, select):disabled { color: #24302b; -webkit-text-fill-color: #24302b; background: #eef3f0; opacity: 1; }
+/* Visually hidden, not display: none, so a screen reader still hears which answer is checked. */
+#edit-registration-form.viewing input[type="radio"]:disabled { position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; }
+#edit-registration-form.viewing label:has(> input[type="radio"]:disabled) { padding: .1rem .7rem; border-radius: 999px; color: #75817b; }
+#edit-registration-form.viewing label:has(> input[type="radio"]:disabled:checked) { color: #fff; background: #23624b; font-weight: 700; }
+#edit-registration-form.viewing label:has(> input:is([value="false"], [value="not_hosting"], [value="no"]):disabled:checked) { background: #4b5560; }
+#edit-registration-form.viewing .staff-choice:has(> .unanswered-tag) > :is(label, .unanswered-hint) { display: none; }
+#edit-registration-form.viewing .staff-choice > .unanswered-tag { display: inline-block; grid-area: 1 / 2 / 2 / 4; justify-self: start;
+  padding: .1rem .7rem; border: 1px solid #75817b; border-radius: 999px; color: #4b5560; font-size: 1rem; }
+
+.child-badge { display: inline-block; margin-left: .5em; padding: .15em .5em; border-radius: .4em; font-size: .85em; color: #253348; }
+/* Statistics: child-type counts and fees' left-out notes sit under the number. */
+.stat-details { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .3rem; margin-top: .35rem; font-size: .85em; }
+.stat-details .child-badge { margin-left: 0; }
+.amount-note { background: #f0f1f2; border-radius: .35rem; padding: .2rem .4rem; white-space: normal; max-width: 22rem; margin-left: auto; }

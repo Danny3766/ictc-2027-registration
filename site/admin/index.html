@@ -2,6 +2,8 @@
 <html lang="zh-Hant">
   <head>
     <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' https://*.supabase.co; object-src 'none'; base-uri 'none'; form-action 'self'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>38 會所登記後台</title>
@@ -45,6 +47,7 @@
           <a href="#admin-accounts" data-admin-link hidden>帳號</a>
           <a href="#admin-settings" data-admin-link hidden>網站設定</a>
           <a href="#admin-hosting" data-admin-link hidden>開家與接機接待</a>
+          <a href="#admin-identities" data-admin-link hidden>身分別</a>
           <a href="#admin-activities" data-admin-link hidden>活動</a>
           <a href="#admin-program" data-admin-link hidden>時間表</a>
           <button id="change-password-button" type="button" class="secondary">更改密碼</button>
@@ -55,11 +58,17 @@
           <form id="search-form" class="staff-search inline-form">
             <label>姓名或流水號<input name="search" maxlength="100" /></label>
             <label>區<select name="district_id"><option value="">全部區</option></select></label>
+            <div class="identity-filter"><span id="identity-filter-title">身分別</span>
+              <details><summary aria-describedby="identity-filter-title">全部身分</summary>
+                <div class="identity-filter-menu" role="group" aria-labelledby="identity-filter-title"></div>
+              </details>
+            </div>
             <button type="submit">搜尋</button>
             <button id="clear-search" type="button" class="secondary" disabled>清除條件</button>
           </form>
           <p id="registration-count"></p>
-          <div class="table-scroll"><table id="registration-table"><thead><tr><th>流水號</th><th>姓名</th><th>區</th><th>狀態</th><th>匯入大會</th><th>更新時間</th><th>操作</th></tr></thead><tbody id="registration-rows"></tbody></table></div>
+          <p class="hint family-hint"><strong>親子：</strong>兒童顯示登記時填寫的家長姓名；家長顯示同區有效登記中對應的兒童姓名。</p>
+          <div class="table-scroll"><table id="registration-table"><thead><tr><th>流水號</th><th>姓名</th><th>區</th><th>狀態</th><th>匯入大會</th><th>更新時間</th><th>親子</th><th>操作</th></tr></thead><tbody id="registration-rows"></tbody></table></div>
           <div class="staff-actions pager"><button id="previous-page" type="button" class="secondary">上一頁</button><span id="page-number"></span><button id="next-page" type="button" class="secondary">下一頁</button></div>
         </section>
 
@@ -71,14 +80,21 @@
           <form id="edit-registration-form" class="staff-form registration-form">
             <div class="registration-columns registration-split">
               <div class="registration-main">
-                <div class="identity-fields">
+                <div class="identity-fields with-child">
                   <label>姓名<input name="full_name" maxlength="100" required /></label>
                   <label>區<select name="district_id" required></select></label>
+                  <label class="identity-select">身分別<select name="meal_identity" required><option value="">請選擇</option></select></label>
+                </div>
+                <div id="detail-children" class="detail-children" hidden><strong>這位家長的兒童</strong><ul></ul></div>
+                <div class="reminder">
+                  <p class="preschool-hint" hidden>6 歲（含）以內且身高 115 公分以下，年齡以特會當天為準</p>
+                  <p class="child-hint" hidden>兒童報名請在表單最下方填寫家長姓名。</p>
                 </div>
                 <fieldset class="hosting-panel"><legend>開家接待與接機接待</legend><div id="detail-hosting"></div><div id="detail-pickup"></div></fieldset>
               </div>
               <fieldset class="activity-panel"><legend>公開活動選擇</legend><div id="detail-choices"></div></fieldset>
             </div>
+            <label class="parent-name" hidden>家長姓名<input name="parent_name" maxlength="20" autocomplete="off" required disabled /></label>
             <div class="form-buttons" id="registration-edit-buttons" hidden>
               <button type="submit">儲存登記</button>
               <button id="cancel-registration-edit" type="button" class="secondary">取消修改</button>
@@ -108,14 +124,20 @@
           <form id="new-registration-form" class="staff-form registration-form">
             <div class="registration-columns registration-split">
               <div class="registration-main">
-                <div class="identity-fields">
+                <div class="identity-fields with-child">
                   <label>姓名<input name="full_name" maxlength="100" required /></label>
                   <label>區<select name="district_id" required></select></label>
+                  <label class="identity-select">身分別<select name="meal_identity" required><option value="">請選擇</option></select></label>
+                </div>
+                <div class="reminder">
+                  <p class="preschool-hint" hidden>6 歲（含）以內且身高 115 公分以下，年齡以特會當天為準</p>
+                  <p class="child-hint" hidden>兒童報名請在表單最下方填寫家長姓名。</p>
                 </div>
                 <fieldset class="hosting-panel"><legend>開家接待與接機接待</legend><div id="new-registration-hosting"></div><div id="new-registration-pickup"></div></fieldset>
               </div>
               <fieldset class="activity-panel"><legend>公開活動選擇</legend><div id="new-registration-choices"></div></fieldset>
             </div>
+            <label class="parent-name" hidden>家長姓名<input name="parent_name" maxlength="20" autocomplete="off" required disabled /></label>
             <button type="submit">建立協助登記</button>
           </form>
           <p id="new-registration-code" class="message" hidden></p>
@@ -125,28 +147,29 @@
           <h2>統計與匯出</h2>
           <p>依目前公開活動與有效登記計算。</p>
           <div class="staff-actions"><button id="refresh-stats" type="button">更新統計</button><button id="download-csv" type="button" class="secondary">下載報名登記 CSV</button><button id="download-stats-csv" type="button" class="secondary">下載統計 CSV</button></div>
+          <p id="student-statistics-hint" class="field-hint" hidden>請先到身分別設定選擇學生統計身分</p>
           <p id="stats-summary"></p>
           <h3>各活動</h3>
-          <div class="table-scroll"><table class="numeric"><thead><tr><th>活動</th><th>參加</th><th>其中學生</th><th>不參加</th><th>未回覆</th><th>預估費用</th><th>預估成本</th><th>預估補貼</th></tr></thead><tbody id="stats-rows"></tbody></table></div>
-          <div class="stat-cards">
+          <div class="table-scroll"><table class="numeric"><thead><tr><th>活動</th><th>參加</th><th>其中學生</th><th>其中兒童</th><th>不參加</th><th>未回覆</th><th>預估費用</th><th>預估成本</th><th>預估補貼</th></tr></thead><tbody id="stats-rows"></tbody></table></div>
+          <div class="stat-cards summary-stat-cards">
             <section class="mini-card">
               <h3>各區</h3>
-              <div class="table-scroll"><table class="numeric"><thead><tr><th>區</th><th>有效登記</th><th>預估費用</th></tr></thead><tbody id="district-stats-rows"></tbody></table></div>
-            </section>
-            <section class="mini-card">
-              <h3>開家接待回覆</h3>
-              <div class="table-scroll"><table class="numeric"><thead><tr><th>回覆</th><th>登記數</th></tr></thead><tbody id="hosting-status-stats-rows"></tbody></table></div>
-              <p id="hosting-status-note" class="field-hint">合計含未列出的接待回答。</p>
+              <div class="table-scroll"><table class="numeric"><thead><tr><th>區</th><th>有效登記</th><th>其中學生</th><th>其中兒童</th><th>預估費用</th></tr></thead><tbody id="district-stats-rows"></tbody></table></div>
             </section>
             <section class="mini-card">
               <h3>接待對象</h3>
               <div class="table-scroll"><table class="numeric"><thead><tr><th>接待對象</th><th>登記數</th><th>人數</th></tr></thead><tbody id="hosting-capacity-stats-rows"></tbody></table></div>
+            </section>
+            <section class="mini-card" aria-describedby="hosting-status-note">
+              <h3>開家接待回覆</h3>
+              <div class="table-scroll"><table class="numeric"><thead><tr><th>回覆</th><th>登記數</th></tr></thead><tbody id="hosting-status-stats-rows"></tbody></table></div>
             </section>
             <section class="mini-card">
               <h3>接機</h3>
               <div class="table-scroll"><table class="numeric"><thead><tr><th>接機</th><th>登記數</th><th>可載人數</th></tr></thead><tbody id="hosting-pickup-stats-rows"></tbody></table></div>
             </section>
           </div>
+          <p id="hosting-status-note" class="field-hint">合計含未列出的接待回答。</p>
           <h3>各區各活動</h3>
           <div id="district-activity-cards" class="stat-cards"></div>
         </section>
@@ -212,6 +235,7 @@
             <div class="registration-columns registration-split">
               <div class="registration-main">
                 <label class="check"><input name="is_hosting_open" type="checkbox" /> 開放開家接待調查</label>
+                <fieldset id="hosting-identities" hidden><legend>公開頁可填開家接待的身分別</legend><div class="survey-identities"></div></fieldset>
                 <p class="hint">開關只影響公開登記頁與查詢頁；後台的登記資料與協助登記一律可以填寫與修改接待。截止時間與登記共用。</p>
               </div>
               <label>說明文字（顯示在公開頁接待區塊上方，例如接待期間；請勿填寫個人聯絡資料）<textarea name="hosting_description" maxlength="2000"></textarea></label>
@@ -219,12 +243,43 @@
             <div class="registration-columns registration-split">
               <div class="registration-main">
                 <label class="check"><input name="is_pickup_open" type="checkbox" /> 開放接機接待調查</label>
+                <fieldset id="pickup-identities" hidden><legend>公開頁可填接機接待的身分別</legend><div class="survey-identities"></div></fieldset>
                 <p class="hint">接機與開家分別開放；同一台車只需一人填寫可接機位數。</p>
               </div>
               <label>接機說明文字（顯示在公開頁接機題目上方；請勿填寫個人聯絡資料）<textarea name="pickup_description" maxlength="2000"></textarea></label>
             </div>
             <button type="submit">儲存接待設定</button>
           </form>
+        </section>
+
+        <section id="admin-identities" class="card" data-view="admin-identities" hidden>
+          <h2>身分別</h2>
+          <form id="student-statistics-identity-form" class="staff-form inline-form">
+            <label>學生統計身分<select name="code"><option value="">未指定</option></select></label>
+            <button type="submit">儲存學生統計身分</button>
+          </form>
+          <form id="identity-form" class="staff-form compact-form">
+            <input name="code" type="hidden" />
+            <div class="field-row">
+              <label>身分名稱<input name="name" maxlength="30" required /></label>
+              <label class="check"><input name="is_active" type="checkbox" />啟用</label>
+              <label class="check"><input name="public_selectable" type="checkbox" />開放報名者選擇</label>
+              <label class="check"><input name="show_badge" type="checkbox" />顯示標籤</label>
+              <label class="swatch">標籤底色<input name="badge_color" type="color" value="#e1effe" /></label>
+              <label class="identity-color-hex">底色色碼<input name="badge_color_hex" value="#e1effe" pattern="#[0-9a-fA-F]{6}" maxlength="7" required title="六位 HEX 色碼，例如 #e1effe" /></label>
+              <div class="form-buttons identity-actions">
+                <button type="submit">儲存身分</button><button type="reset" class="secondary" hidden>取消編輯</button>
+              </div>
+            </div>
+          </form>
+          <p class="hint">已使用的身分只能停用；一般、學生與兩種兒童身分保留，只能改名稱與標籤。兒童身分依兒童類型自動帶入。</p>
+          <p id="identity-reorder-hint" class="hint" hidden>拖曳右側 ☰ 調整順序，或聚焦 ☰ 後按 ↑ ↓；完成後按「完成排序」儲存。</p>
+          <p id="identity-reorder-status" class="visually-hidden" role="status"></p>
+          <div class="table-scroll"><table><thead><tr><th>身分</th><th>狀態</th><th>開放選擇</th><th>標籤</th><th>操作</th>
+            <th class="reorder-col" abbr="排序"><span class="visually-hidden">排序</span><div class="reorder-buttons">
+              <button id="reorder-identities" type="button" class="secondary">調整排序</button>
+              <button id="cancel-identity-reorder" type="button" class="secondary" hidden>取消</button>
+            </div></th></tr></thead><tbody id="identity-rows"></tbody></table></div>
         </section>
 
         <section id="admin-activities" class="card" data-view="admin-activities" hidden>
@@ -241,6 +296,7 @@
               <label>類型<select name="category"><option value="meeting">聚會</option><option value="meal">用餐</option><option value="other">其他</option></select></label>
               <label class="grow">名稱<input name="title" maxlength="200" required /></label>
               <label class="check"><input name="is_published" type="checkbox" /> 公開活動</label>
+              <label class="check"><input name="affects_conference_import" type="checkbox" /> 影響大會匯入狀態</label>
             </div>
             <div class="field-row">
               <label class="pair">開始日期<input name="starts_on" type="date" /></label>
@@ -253,11 +309,21 @@
               <label class="grow">地址<input name="address" maxlength="300" /></label>
               <label class="grow">地圖連結<input name="map_url" type="url" maxlength="1000" /></label>
             </div>
-            <div class="field-row">
-              <label>一般每人費用<input name="fee_amount" type="number" min="0" /><small class="field-hint">留空代表未設定</small></label>
-              <label>學生每人費用<input name="student_fee_amount" type="number" min="0" /><small class="field-hint">留空代表沒有學生價；0 代表學生免費</small></label>
-              <label>實際每人成本<input name="cost_amount" type="number" min="0" /><small class="field-hint">只在後台統計顯示，公開頁看不到</small></label>
-              <label>排序<input name="sort_order" type="number" /><small class="field-hint">選填；留空排最後</small></label>
+            <div class="activity-pricing-layout">
+              <div>
+                <h3>各身分每人費用</h3>
+                <div class="activity-price-table">
+                  <div class="activity-price-header" aria-hidden="true"><span>用餐身分</span><span>每人費用（NT$）</span></div>
+                  <label class="activity-price-row"><span id="general-price-name">一般</span><input name="fee_amount" type="number" min="0" placeholder="未設定" aria-label="一般每人費用" /></label>
+                  <div id="identity-prices"></div>
+                </div>
+                <p class="field-hint">各身分價格獨立設定；留空表示尚未提出收費，填 0 表示免費。</p>
+              </div>
+              <aside class="activity-price-settings">
+                <h3>管理設定</h3>
+                <label>實際每人成本<input name="cost_amount" type="number" min="0" /><small class="field-hint">每人 NT$，僅供後台統計，不公開顯示</small></label>
+                <label>排序<input name="sort_order" type="number" placeholder="留空排最後" /><small class="field-hint">選填</small></label>
+              </aside>
             </div>
             <div class="field-row">
               <label>報名對象<select name="audience"><option value="all">所有人</option><option value="hosting">有開家接待的聖徒（含家人已登記開家接待）</option><option value="pickup">接機接待</option></select></label>

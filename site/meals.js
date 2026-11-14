@@ -1,8 +1,21 @@
-// 用餐身分（學生價）、報名對象，以及活動的時間、費用與地圖連結文字, shared by the public page and the
+// 用餐身分與自訂價格、報名對象，以及活動的時間、費用與地圖連結文字, shared by the public page and the
 // back office. The database applies the same rules (registration_meal_identity,
-// registration_audience_valid); this only keeps the form in step.
+// survey_audience_valid); this only keeps the form in step.
 const Meals = (() => {
-  const identityLabels = { general: "一般", student: "學生" };
+  const identityLabels = { general: "一般", student: "學生", child: "兒童（國小）", preschool: "兒童（學齡前）" };
+  // Until configure() gets the list from the Edge Function (an older one sends none).
+  let identities = Object.entries(identityLabels).map(([code, name]) => ({ code, name, is_active: true, public_selectable: true }));
+  let staff = false;
+  let surveySettings = {};
+  // identityLabels is changed in place, since callers hold the object.
+  function configure(items, isStaff = false, settings = {}) {
+    surveySettings = settings;
+    if (!items) return;
+    identities = items;
+    staff = isStaff;
+    for (const key of Object.keys(identityLabels)) delete identityLabels[key];
+    for (const item of items) identityLabels[item.code] = item.name;
+  }
   const revertedNote = "不符報名對象，已改為不參加。";
   // 是 and 家人已登記開家接待 both count as a hosting household.
   const hostingStatuses = ["hosting", "family_registered"];
@@ -11,21 +24,47 @@ const Meals = (() => {
   const eligible = (activity, context = {}) => {
     const audience = activity.audience ?? "all";
     if (audience === "all") return true;
-    if (audience === "hosting") return hostingStatuses.includes(context.hostingStatus);
-    if (audience === "pickup") return context.pickupStatus === "yes";
+    // Public survey targets determine exemptions independently, including in the back office.
+    if (audience === "hosting") return Boolean(context.skipsHosting) || hostingStatuses.includes(context.hostingStatus);
+    if (audience === "pickup") return Boolean(context.skipsPickup ?? context.skipsHosting) || context.pickupStatus === "yes";
     if (!audience.startsWith("activity:")) return false;
     const requiredId = Number(audience.slice(9));
     const prerequisite = context.activities?.find((item) => item.id === requiredId);
     return Boolean(prerequisite && prerequisite.is_published !== false
       && context.choices?.some((choice) => choice.activity_id === requiredId && choice.attending));
   };
-  // Without an answered identity the general price applies, like the back-office estimate.
-  const fee = (activity, identity) =>
-    (identity === "student" && hasStudentPrice(activity) ? activity.student_fee_amount : activity.fee_amount) ?? 0;
+  // A missing price is unknown, not free and never another identity's price.
+  const fee = (activity, identity) => {
+    if (identity === "general") return activity.fee_amount ?? null;
+    if (!identity) return null;
+    if (activity.activity_identity_prices) return activity.activity_identity_prices.find((price) => price.identity_code === identity)?.fee_amount ?? null;
+    return identity === "student" ? activity.student_fee_amount ?? null : null;
+  };
+  // Unset fees are left out of a total but counted, so the total can name what it lacks.
+  const addFees = (values) => values.reduce((total, value) => value == null
+    ? { ...total, missing: total.missing + 1 }
+    : { ...total, sum: total.sum + value, known: total.known + 1 }, { sum: 0, known: 0, missing: 0 });
   const needsIdentity = (activities, choices) => choices.some((choice) => choice.attending
-    && activities.some((activity) => activity.id === choice.activity_id && hasStudentPrice(activity)));
+    && activities.some((activity) => activity.id === choice.activity_id && activity.category === "meal" && activity.is_published !== false));
+  // Who may pick an identity anew: active ones, and staff also those not open to the public.
+  const selectable = (item) => item.is_active && (staff || item.public_selectable);
 
   function priceText(activity) {
+    if (activity.activity_identity_prices) {
+      // In 身分別 order; identities nobody can pick anew and unset prices are left out.
+      const prices = identities.filter(selectable).map((item) => ({ name: item.name, amount: fee(activity, item.code) }));
+      const free = prices.filter((price) => price.amount === 0).map((price) => price.name);
+      // 免費 alone only when every identity is priced 0: an unset price is not known to be free.
+      if (free.length && free.length === prices.length) return "免費";
+      // Identities sharing a price form one item where the first of them stands.
+      const paid = new Map();
+      for (const { name, amount } of prices) {
+        if (amount > 0) paid.set(amount, [...(paid.get(amount) ?? []), name]);
+      }
+      const parts = [...paid].map(([amount, names]) => `${names.join("、")} NT$${amount}／人`);
+      if (free.length) parts.push(`${free.join("、")}免費`);
+      return parts.join("，");
+    }
     const prices = [];
     if (activity.fee_amount != null) prices.push(`${hasStudentPrice(activity) ? "一般 " : ""}NT$${activity.fee_amount}／人`);
     if (hasStudentPrice(activity)) prices.push(`學生 NT$${activity.student_fee_amount}／人`);
@@ -53,9 +92,9 @@ const Meals = (() => {
     return value === undefined ? null : value === "true";
   };
 
-  // Adds the audience notes and the identity question to activity fields just rendered in container;
+  // Adds the audience notes to activity fields just rendered in container;
   // each activity's wrapper carries data-activity="<id>". All text is set as text, never as markup.
-  function render(container, activities, identity = null) {
+  function render(container, activities) {
     for (const activity of activities) {
       const wrapper = container.querySelector(`[data-activity="${activity.id}"]`);
       if (!wrapper || !activity.audience || activity.audience === "all") continue;
@@ -73,37 +112,10 @@ const Meals = (() => {
       }
       wrapper.append(reverted);
     }
-    if (!activities.some(hasStudentPrice)) return;
-    const block = document.createElement("div");
-    block.className = "activity meal-identity";
-    block.hidden = true;
-    const title = document.createElement("strong");
-    title.textContent = "用餐身分";
-    const options = document.createElement("div");
-    options.className = "activity-options";
-    options.setAttribute("role", "radiogroup");
-    options.setAttribute("aria-label", "用餐身分");
-    for (const [value, text] of Object.entries(identityLabels)) {
-      const option = document.createElement("label");
-      const input = document.createElement("input");
-      input.type = "radio";
-      input.name = "meal_identity";
-      input.value = value;
-      input.checked = value === identity;
-      option.append(input, text);
-      options.append(option);
-    }
-    const hint = document.createElement("p");
-    hint.className = "hint";
-    hint.textContent = "勾選的用餐有學生價，請選擇身分。";
-    block.append(title, options, hint);
-    container.append(block);
   }
 
-  // Applies the current audience answers: a restricted activity is
-  // 不參加 and locked outside its audience, and the identity question shows, required, only while a
-  // student-priced activity is attended. Hidden or locked fields are disabled, so the form's own checks
-  // skip them; read choices with choices() below, since FormData leaves disabled fields out.
+  // Restricted activities become 不參加 and locked outside their audience.
+  // Read choices() since FormData leaves disabled controls out.
   // A 參加 reverted here comes back if the answer becomes eligible again on the same screen.
   function sync(container, activities, context = {}) {
     // A prerequisite can appear after its dependent activity. Repeat until the choices settle.
@@ -131,14 +143,6 @@ const Meals = (() => {
       }
       if (!changed) break;
     }
-    const block = container.querySelector(".meal-identity");
-    if (!block) return;
-    const needed = needsIdentity(activities, choices(container, activities));
-    block.hidden = !needed;
-    for (const input of block.querySelectorAll("input")) {
-      input.disabled = !needed;
-      input.required = needed;
-    }
   }
 
   // Answered activities only; an unanswered one is left out.
@@ -146,14 +150,37 @@ const Meals = (() => {
     .map((activity) => ({ activity_id: activity.id, attending: choiceOf(container, activity) }))
     .filter((choice) => choice.attending !== null);
 
-  // null while the question is hidden: no student-priced activity is attended.
-  const readIdentity = (container) =>
-    container.querySelector('[name="meal_identity"]:checked:not(:disabled)')?.value ?? null;
-
-  // A stored identity counts only while the choices still need one: after an admin removes a student
-  // price or unpublishes the meal, the old value stays in the database until the next save.
-  const identityFor = (activities, choices, identity) =>
-    identity && needsIdentity(activities, choices) ? identity : null;
+  // The form's 身分別; null while 請選擇.
+  const readIdentity = (form) => form.elements.meal_identity.value || null;
+  const childType = (identity) => identity === "preschool" ? "preschool" : identity === "child" ? "elementary" : "";
+  // The two target lists are independent; older reference responses retain the general-only default.
+  const answersHosting = (identity, kind = "hosting") => (surveySettings[`${kind}_identity_codes`] ?? ["general"]).includes(identity);
+  // 身分別 options: new picks follow selectable(); the stored identity stays even when stopped or staff-only.
+  // Left out keeps the current pick; null is a registration without an identity, so nothing is picked.
+  function renderIdentity(select, stored = select.value) {
+    select.replaceChildren(new Option("請選擇", ""));
+    for (const item of identities.filter((item) => item.code === stored || selectable(item))) {
+      select.add(new Option(item.name, item.code));
+    }
+    select.value = stored ?? "";
+  }
+  // The list's 身分別 checklist in 身分別 order: a stopped identity only while registrations use it, then 未填身分 ("").
+  // Every box defaults to checked so form.reset() means 全部身分; a redraw keeps what was unchecked.
+  function renderIdentityFilter(menu, usedCodes = []) {
+    const unchecked = new Set([...menu.querySelectorAll('[name="identity_filter"]')].filter((box) => !box.checked).map((box) => box.value));
+    const check = (name, value, text) => {
+      const box = Object.assign(document.createElement("input"), { type: "checkbox", name, value, defaultChecked: true });
+      box.checked = !unchecked.has(value);
+      const label = document.createElement("label");
+      label.className = "check";
+      label.append(box, text);
+      return label;
+    };
+    menu.replaceChildren(check("identity_all", "", "全部身分"),
+      ...identities.filter((item) => item.is_active || usedCodes.includes(item.code))
+        .map((item) => check("identity_filter", item.code, item.name + (item.is_active ? "" : "（已停用）"))),
+      check("identity_filter", "", "未填身分"));
+  }
 
   const taipeiDateTime = (value) => {
     if (!value) return null;
@@ -191,7 +218,7 @@ const Meals = (() => {
   const revertedCount = (container) => container.querySelectorAll("input[data-reverted]").length;
 
   return {
-    identityLabels, hasStudentPrice, eligible, fee, needsIdentity, identityFor, priceText, feeText, mapUrl, activityTime,
+    configure, identityLabels, childType, answersHosting, renderIdentity, renderIdentityFilter, eligible, fee, addFees, needsIdentity, priceText, feeText, mapUrl, activityTime,
     render, sync, choices, readIdentity, revertedCount,
   };
 })();

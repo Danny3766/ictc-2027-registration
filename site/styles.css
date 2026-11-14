@@ -19,17 +19,39 @@ h1, h2 { line-height: 1.25; }
 .notice, .message { padding: .75rem 1rem; border-radius: .6rem; background: #fff4d8; }
 .test-banner { margin: 0; padding: .5rem 1rem; color: #654c00; background: #fff4d8; font-weight: 700; text-align: center; }
 .message.error { color: #842525; background: #ffe9e9; }
+.field-invalid { color: #842525; font-weight: 700; }
+.field-invalid input:not([type="radio"]), .field-invalid select { border: 2px solid #a52828; }
+.field-invalid input[type="radio"] { accent-color: #a52828; }
+.hosting-question:has(+ .hosting-options.field-invalid) { color: #842525; font-weight: 700; }
 .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; border-bottom: 1px solid #d8e1dc; padding-bottom: .75rem; }
 .tabs button { margin: 0; min-width: 0; background: #fff; color: #23624b; border-color: transparent; }
 .tabs button[aria-selected="true"] { background: #23624b; color: #fff; }
 label, fieldset { display: block; margin: 1rem 0; }
 .identity-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+/* Reminders a registrant must not miss: blue blocks (decided 2026-11-10). A group of reminders whose
+   lines are all hidden takes no room. */
+.reminder { margin: .5rem 0 1rem; padding: .7rem 1rem; border-left: 4px solid #2f6fb5; border-radius: .6rem; color: #1d4f86; background: #e8f1fb; font-size: .95rem; font-weight: 600; }
+.reminder p { margin: 0; }
+.reminder p + p { margin-top: .3rem; }
+div.reminder:not(:has(> :not([hidden]))) { display: none; }
+/* Plain explanations, quieter than reminders. */
+.note { margin: .5rem 0 1rem; padding: .7rem 1rem; border-left: 4px solid #9caaa3; border-radius: .6rem; color: #33443d; background: #eef3f0; font-size: .95rem; }
+.note p { margin: 0; }
+.note p + p { margin-top: .3rem; }
+/* The lookup result, framed apart from the lookup fields above it. */
+.result-frame { margin-top: 1.25rem; padding: 1rem; border: 2px solid #23624b; border-radius: .75rem; }
+.result-title { margin: 0 0 .5rem; color: #23624b; font-size: 1.1rem; }
+input[readonly] { background: #eef3f0; }
+#query-form :is(input, select):disabled { color: #59655f; background: #eef3f0; opacity: 1; }
 input, select, textarea, button { width: 100%; min-height: 2.75rem; margin-top: .35rem; padding: .65rem .75rem; border: 1px solid #9caaa3; border-radius: .5rem; font: inherit; }
 button, .button-link { border-color: #23624b; color: #fff; background: #23624b; font-weight: 700; cursor: pointer; }
 button:disabled { opacity: .55; cursor: wait; }
+#query-form:has(input:disabled) button { cursor: not-allowed; }
 .secondary { color: #23624b; background: #fff; }
 fieldset { padding: 0; border: 0; }
 .activity { padding: 1rem 0; border-bottom: 1px solid #e5ebe8; }
+/* Frame drawn inside the widened box so adjacent missing activities never overlap; text stays put. */
+.activity.field-invalid { margin-inline: -.75rem; padding-inline: .75rem; color: inherit; font-weight: inherit; outline: 3px solid #a52828; outline-offset: -3px; border-radius: .5rem; }
 .program-calendar { display: grid; gap: 1rem; }
 .program-day { border: 1px solid #d8e1dc; border-radius: .75rem; overflow: hidden; }
 .program-day h3 { margin: 0; padding: .7rem 1rem; color: #fff; background: #23624b; font-size: 1rem; }
@@ -69,6 +91,8 @@ fieldset { padding: 0; border: 0; }
 .button-link { display: block; margin-top: 1rem; padding: .7rem; border-radius: .5rem; text-align: center; text-decoration: none; }
 
 @media (min-width: 42rem) {
+  /* 姓名／區／身分別 share one row on wide screens; on phones 身分別 wraps to the next row. */
+  .identity-fields.with-child { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .program-calendar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .program-slot { grid-template-columns: 1fr; gap: .1rem; }
 }

@@ -14,13 +14,16 @@ let count = 0;
 let search = "";
 // The 區 filter's district id as the select gives it; "" means every district.
 let district = "";
+// The applied 身分別 codes, "" for 未填身分; empty means 全部身分, with no identity condition.
+let identityFilter = [];
 let visibleRegistrations = [];
 let selectedRegistration;
 let editingRegistration = false;
+let detailRequest = 0;
 // Must match the page size of list_registrations in the staff Edge Function.
 const REGISTRATIONS_PER_PAGE = 10;
 let editingStaff = null;
-const adminSections = ["#admin-accounts", "#admin-settings", "#admin-hosting", "#admin-activities", "#admin-program"];
+const adminSections = ["#admin-identities", "#admin-accounts", "#admin-settings", "#admin-hosting", "#admin-activities", "#admin-program"];
 
 function showAdminSections(visible) {
   for (const selector of adminSections) document.querySelector(selector).hidden = !visible;
@@ -62,16 +65,21 @@ const labels = {
 const label = (group, value) => labels[group][value] ?? value;
 
 // registration_id is the hosting table's primary key, so the API embeds the one row as an object.
-const hostingOf = (registration) => Hosting.normalize(registration.registration_hosting);
-const pickupOf = (registration) => Pickup.normalize(registration.registration_pickup);
+const hostingOf = (registration) => registration.registration_hosting?.answer_valid === false ? null : Hosting.normalize(registration.registration_hosting);
+const pickupOf = (registration) => registration.registration_pickup?.answer_valid === false ? null : Pickup.normalize(registration.registration_pickup);
 const attends = (registration, activity) =>
   registration.registration_choices.some((choice) => choice.activity_id === activity.id && choice.attending);
-// What this person pays for the given activities, by their identity (general price until answered).
-const mealFee = (registration, activities) => activities
-  .filter((activity) => attends(registration, activity))
-  .reduce((sum, activity) => sum + Meals.fee(activity, registration.meal_identity), 0);
-// Blank when no attended meal has a student price, even if an identity is still stored from before an
-// admin removed the price; 未回覆 when one is needed but missing.
+const priced = (activity) => activity.fee_amount != null || activity.student_fee_amount != null
+  || activity.activity_identity_prices?.length > 0;
+// Whose fee is unset: the identity, 未回覆身分者, or the activity when it has no price at all.
+const unsetLabel = (registration, activity) => !priced(activity) ? activity.title
+  : registration.meal_identity ? Meals.identityLabels[registration.meal_identity] ?? registration.meal_identity : "未回覆身分者";
+// "NT$800（兒童未計入）"; "—" when nothing is set, like a missing cost.
+const feeText = ({ sum, known, unset }) => !unset.length ? `NT$${sum}`
+  : known ? `NT$${sum}（${[...new Set(unset)].join("、")}未計入）` : "—";
+// The summary and 各區 show only the amount; 各活動 names what is left out.
+const amountText = ({ sum, known, unset }) => known || !unset.length ? `NT$${sum}` : "—";
+// Blank when no published meal is attended; the database retains the stored identity.
 const identityText = (registration, activities) => {
   if (!Meals.needsIdentity(activities, registration.registration_choices)) return "";
   return registration.meal_identity ? Meals.identityLabels[registration.meal_identity] : "未回覆";
@@ -125,6 +133,7 @@ function hideMessage() {
 document.querySelector("#message-close").addEventListener("click", hideMessage);
 
 function clearSession() {
+  detailRequest++;
   session = null;
   sessionStorage.removeItem(sessionKey);
   // The next person to sign in on this device starts at 登記名單.
@@ -135,7 +144,7 @@ function clearSession() {
   staffPanel.hidden = true;
   showAdminSections(false);
   document.querySelector("#identity").textContent = "";
-  for (const form of ["#create-staff-form", "#edit-staff-form", "#staff-password-form", "#change-password-form"]) {
+  for (const form of ["#create-staff-form", "#edit-staff-form", "#staff-password-form", "#change-password-form", "#identity-form"]) {
     document.querySelector(form).reset();
   }
   document.querySelector("#staff-editor").hidden = true;
@@ -143,20 +152,18 @@ function clearSession() {
   document.querySelector("#new-registration-code").textContent = "";
   document.querySelector("#new-registration-code").hidden = true;
   setReordering(false);
+  setIdentityReordering(false);
   // The 協助登記 form keeps input across redraws, so a shared device must not hand it to the next login.
   document.querySelector("#new-registration-form").reset();
   // The list's conditions belong to this login too.
   document.querySelector("#search-form").reset();
-  [page, search, district] = [0, "", ""];
+  syncIdentityFilter();
+  [page, search, district, identityFilter] = [0, "", "", []];
   document.querySelector("#clear-search").disabled = true;
-  for (const selector of ["#registration-rows", "#staff-rows"]) {
+  for (const selector of ["#registration-rows", "#staff-rows", "#stats-rows", "#district-stats-rows", "#district-activity-cards",
+    "#hosting-status-stats-rows", "#hosting-capacity-stats-rows"]) {
     document.querySelector(selector).replaceChildren();
   }
-  document.querySelector("#stats-rows").replaceChildren();
-  document.querySelector("#district-stats-rows").replaceChildren();
-  document.querySelector("#district-activity-cards").replaceChildren();
-  document.querySelector("#hosting-status-stats-rows").replaceChildren();
-  document.querySelector("#hosting-capacity-stats-rows").replaceChildren();
   document.querySelector("#stats-summary").textContent = "";
   document.querySelector("#registration-detail").hidden = true;
   selectedRegistration = null;
@@ -218,6 +225,53 @@ function cell(row, value) {
   item.textContent = String(value ?? "");
   row.append(item);
   return item;
+}
+
+// 兒童類型: the registration CSV label, "" for anyone not a child.
+const childLabel = (type) => ({ preschool: "學齡前", elementary: "國小" })[type] ?? "";
+function appendIdentityBadge(container, registration, suffix = "") {
+  const identity = reference.identities?.find((item) => item.code === registration.meal_identity);
+  if (!identity?.show_badge) return;
+  const badge = document.createElement("span");
+  badge.className = "child-badge";
+  const color = /^#[0-9a-f]{6}$/i.test(identity.badge_color) ? identity.badge_color : "#e1effe";
+  badge.style.backgroundColor = color;
+  // Choose the higher-contrast text color using sRGB relative luminance.
+  const channels = color.slice(1).match(/../g).map((hex) => {
+    const value = parseInt(hex, 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  badge.style.color = luminance > 0.179 ? "#000000" : "#ffffff";
+  badge.textContent = identity.name + suffix;
+  container.append(badge);
+}
+// 其中兒童: the total on top, a badge per child type with anyone in it below; the CSV gets "3（國小 3）".
+function childrenCell(row, people) {
+  const counts = [["preschool", "學齡前"], ["elementary", "國小"]]
+    .map(([type, label]) => ({ type, label, count: people[type] ?? 0 }));
+  const total = counts.reduce((sum, item) => sum + item.count, 0);
+  const item = cell(row, total);
+  const nonzero = counts.filter((entry) => entry.count);
+  item.dataset.csv = total + (nonzero.length ? `（${nonzero.map((entry) => `${entry.label} ${entry.count}`).join("、")}）` : "");
+  if (nonzero.length) {
+    const details = document.createElement("div"); details.className = "stat-details";
+    for (const entry of nonzero) {
+      appendIdentityBadge(details, { meal_identity: entry.type === "preschool" ? "preschool" : "child" }, ` ${entry.count}`);
+    }
+    if (details.children.length) item.append(details);
+  }
+}
+// 各活動 fee: the amount on top, feeText's "（…未計入）" note below on grey; the CSV keeps the whole text.
+function amountCell(row, value) {
+  const text = typeof value === "string" ? value : feeText(value);
+  const split = text.indexOf("（");
+  const item = cell(row, split < 0 ? text : text.slice(0, split));
+  item.dataset.csv = text;
+  if (split >= 0) {
+    const note = document.createElement("div"); note.className = "stat-details amount-note";
+    note.textContent = text.slice(split); item.append(note);
+  }
 }
 
 function taipeiInput(value) {
@@ -354,7 +408,8 @@ function setAudienceOptions(editingId = null) {
 }
 
 // `only` redraws one table, so redrawing activities keeps unsaved input in the other forms.
-// A full redraw leaves the activity table alone while reordering, so the unsaved drag order stays.
+// Every redraw leaves the activity table alone while reordering, so the unsaved drag order stays;
+// setReordering(false) redraws it on the way out.
 function renderReferenceRows(only) {
   for (const [table, items, columns, form, transform] of [
     ["#activity-rows", reference.activities, ["title", "category", "starts_at", "is_published"], "#activity-form",
@@ -366,7 +421,7 @@ function renderReferenceRows(only) {
     ["#program-rows", reference.program, ["event_date", "start_time", "title", "is_visible"], "#program-form",
       (item) => ({ ...item, start_time: item.start_time?.slice(0, 5), end_time: item.end_time?.slice(0, 5) })],
   ]) {
-    if (only ? table !== only : table === "#activity-rows" && activitySection.classList.contains("reordering")) continue;
+    if ((only && table !== only) || (table === "#activity-rows" && activitySection.classList.contains("reordering"))) continue;
     const rows = document.querySelector(table);
     // A redraw after a save or reorder keeps the activities the user had expanded.
     const opened = new Set(Array.from(rows.querySelectorAll("details[open]"), (details) => details.closest("tr").dataset.id));
@@ -384,7 +439,10 @@ function renderReferenceRows(only) {
         cell(row, value);
       }
       editButton(row, () => {
-        if (table === "#activity-rows") setAudienceOptions(item.id);
+        if (table === "#activity-rows") {
+          setAudienceOptions(item.id);
+          renderIdentityPrices(item);
+        }
         fillForm(document.querySelector(form), transform(item));
         setEditing(document.querySelector(form), item);
       });
@@ -395,9 +453,13 @@ function renderReferenceRows(only) {
         handle.className = "drag-handle";
         handle.textContent = "☰";
         handle.setAttribute("aria-label", `拖曳排序：${item.title}`);
+        // Outside reordering the column shows each activity's place in the order instead of ☰.
+        const number = document.createElement("span");
+        number.className = "sort-number";
+        number.textContent = rows.children.length + 1;
         const handleCell = cell(row, "");
         handleCell.className = "reorder-col";
-        handleCell.append(handle);
+        handleCell.append(number, handle);
       }
       rows.append(row);
     }
@@ -410,17 +472,56 @@ function renderReference() {
     registration_deadline_at: taipeiInput(reference.settings.registration_deadline_at),
   }, false);
   fillForm(document.querySelector("#hosting-settings-form"), reference.settings, false);
+  renderSurveyIdentities();
   setAudienceOptions(document.querySelector("#activity-form").dataset.editingId);
+  renderIdentities();
+  renderStudentStatisticsIdentity();
+  renderIdentityPrices();
   renderReferenceRows();
   renderNewRegistrationForm();
 }
+
+function syncSurveyIdentitySettings() {
+  const form = document.querySelector("#hosting-settings-form");
+  for (const kind of ["hosting", "pickup"]) {
+    document.querySelector(`#${kind}-identities`).hidden = !form.elements[`is_${kind}_open`].checked;
+  }
+}
+
+// keepInput: a redraw for a renamed or reordered identity keeps unsaved ticks in the hosting form.
+function renderSurveyIdentities(keepInput = false) {
+  for (const kind of ["hosting", "pickup"]) {
+    const selected = reference.settings[`${kind}_identity_codes`] ?? ["general"];
+    const container = document.querySelector(`#${kind}-identities .survey-identities`);
+    const checked = keepInput ? [...container.querySelectorAll("input:checked")].map((input) => input.value) : selected;
+    container.replaceChildren();
+    for (const identity of reference.identities ?? []) {
+      if (!(identity.is_active && identity.public_selectable) && !selected.includes(identity.code)) continue;
+      const option = document.createElement("label"); option.className = "check";
+      const input = document.createElement("input"); input.type = "checkbox";
+      input.name = `${kind}_identity_codes`; input.value = identity.code; input.checked = checked.includes(identity.code);
+      option.append(input, identity.name + (!identity.is_active ? "（已停用）" : !identity.public_selectable ? "（僅後台可選）" : ""));
+      container.append(option);
+    }
+  }
+  syncSurveyIdentitySettings();
+}
+document.querySelector("#hosting-settings-form").addEventListener("input", syncSurveyIdentitySettings);
 
 async function saveReference(event, kind) {
   event.preventDefault();
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
+  if (kind === "hosting") {
+    for (const survey of ["hosting", "pickup"]) {
+      data[`${survey}_identity_codes`] = [...form.querySelectorAll(`[name="${survey}_identity_codes"]:checked`)].map((input) => input.value);
+      if (form.elements[`is_${survey}_open`].checked && !data[`${survey}_identity_codes`].length) {
+        return showMessage("請至少選擇一個可填寫的身分別", true);
+      }
+    }
+  }
   if (form.dataset.editingId) data.id = form.dataset.editingId;
-  for (const name of ["is_registration_open", "is_lookup_open", "is_hosting_open", "is_pickup_open", "is_published", "is_visible"]) {
+  for (const name of ["is_registration_open", "is_lookup_open", "is_hosting_open", "is_pickup_open", "is_published", "affects_conference_import", "is_visible"]) {
     if (form.elements.namedItem(name)) data[name] = form.elements.namedItem(name).checked;
   }
   if (kind === "settings") data.registration_deadline_at = taipeiTimestamp(data.registration_deadline_at);
@@ -434,9 +535,9 @@ async function saveReference(event, kind) {
     data.ends_at_has_time = Boolean(data.ends_time);
     data.sort_order = activitySortOrder(form, data.sort_order);
     for (const name of ["starts_on", "starts_time", "ends_on", "ends_time"]) delete data[name];
-    if (data.student_fee_amount !== "" && data.fee_amount === "") {
-      return showMessage("設定學生每人費用前，請先填寫一般每人費用。", true);
-    }
+    data.identity_prices = identityPricesFrom(form);
+    // Older readers still use student_fee_amount.
+    data.student_fee_amount = data.identity_prices.find((price) => price.identity_code === "student")?.fee_amount ?? "";
   }
   // An activity save would change the list being reordered; other saves leave the drag order alone.
   if (kind === "activity" && activitySection.classList.contains("reordering")) {
@@ -454,7 +555,7 @@ async function saveReference(event, kind) {
     let outside;
     try {
       outside = activeRegistrations(await allRegistrations()).filter((registration) => attends(registration, edited)
-        && !Meals.eligible(data, { hostingStatus: hostingOf(registration)?.status,
+        && !Meals.eligible(data, { skipsHosting: !Meals.answersHosting(registration.meal_identity ?? "general"), skipsPickup: !Meals.answersHosting(registration.meal_identity ?? "general", "pickup"), hostingStatus: hostingOf(registration)?.status,
           pickupStatus: pickupOf(registration)?.status, choices: registration.registration_choices,
           activities: reference.activities })).length;
     } catch (error) { return showMessage(error.message, true); }
@@ -463,15 +564,17 @@ async function saveReference(event, kind) {
   try {
     await api("save_reference", { kind, data });
     reference = await api("list_reference");
+    Meals.configure(reference.identities, true, reference.settings);
     renderReference();
     if (!["settings", "hosting"].includes(kind)) form.reset();
     showMessage("設定已儲存。");
   } catch (error) { showMessage(error.message, true); }
 }
 
-async function loadRegistrations() {
-  const result = await api("list_registrations", { page, search, ...(district && { district_id: Number(district) }) });
-  count = result.count ?? 0;
+async function loadRegistrations(recount = true) {
+  const result = await api("list_registrations", { page, search, summary: true, ...(!recount && { skip_count: true }), ...(district && { district_id: Number(district) }),
+    ...(identityFilter.length && { meal_identities: identityFilter.map((code) => code || null) }) });
+  count = result.count ?? count;
   document.querySelector("#registration-count").textContent = `共 ${count} 筆`;
   document.querySelector("#page-number").textContent = `第 ${page + 1} 頁`;
   document.querySelector("#previous-page").disabled = page === 0;
@@ -483,16 +586,22 @@ async function loadRegistrations() {
   for (const registration of result.registrations) {
     const row = document.createElement("tr");
     cell(row, registration.serial_no);
-    cell(row, registration.full_name);
+    const nameCell = cell(row, registration.full_name);
+    appendIdentityBadge(nameCell, registration);
     cell(row, districtNames.get(registration.district_id));
     statusCell(row, "record", registration.record_status);
     statusCell(row, "import", registration.import_status);
     cell(row, shortTime(registration.updated_at));
+    // Same-district active family matches are named directly in the list.
+    const family = cell(row, registration.is_child ? `家長：${registration.parent_name}` : "");
+    if (registration.children?.length) {
+      family.textContent = `兒童：${registration.children.map((child) => child.full_name).join("、")}`;
+    }
     const actions = cell(row, "");
     const edit = document.createElement("button");
     edit.type = "button";
     edit.textContent = "查看／處理";
-    edit.addEventListener("click", () => openRegistration(registration));
+    edit.addEventListener("click", () => loadRegistrationDetail(registration).catch((error) => showMessage(error.message, true)));
     actions.append(edit);
     rows.append(row);
   }
@@ -517,77 +626,113 @@ function currentActivities() {
   return reference.activities.filter((item) => item.is_published);
 }
 
-// Returns [參加, 不參加, 未回覆] counts for one activity.
-function countAnswers(registrations, activity) {
-  const counts = [0, 0, 0];
-  for (const registration of registrations) {
-    const choice = registration.registration_choices.find((item) => item.activity_id === activity.id);
-    counts[!choice ? 2 : choice.attending ? 0 : 1] += 1;
+// Fold anonymous database counts once; work depends on categories, not the number of registrations.
+function summarizeStatistics(data, activities) {
+  const emptyFee = () => ({ sum: 0, known: 0, unset: [] });
+  const studentIdentity = reference.settings.student_statistics_identity_code;
+  const activityMap = new Map(activities.map((activity) => [activity.id, activity]));
+  const group = () => ({ count: 0, students: 0, children: {}, fee: emptyFee(), noIdentity: 0, activities: new Map(
+    activities.map((activity) => [activity.id, { yes: 0, no: 0, students: 0, children: {}, outside: 0, fee: emptyFee() }])) });
+  const total = group();
+  const districts = new Map(reference.districts.map((district) => [district.id, group()]));
+  const addChildren = (counts, type, n) => { if (type) counts[type] = (counts[type] ?? 0) + n; };
+  for (const row of data.people) {
+    for (const target of [total, districts.get(row.district_id)].filter(Boolean)) {
+      target.count += row.count;
+      target.noIdentity += row.no_identity;
+      if (studentIdentity && row.meal_identity === studentIdentity) target.students += row.count;
+      addChildren(target.children, row.child_type, row.count);
+    }
   }
-  return counts;
+  for (const row of data.choices) {
+    const activity = activityMap.get(row.activity_id);
+    if (!activity) continue;
+    const price = Meals.fee(activity, row.meal_identity);
+    for (const target of [total, districts.get(row.district_id)].filter(Boolean)) {
+      const answer = target.activities.get(row.activity_id);
+      answer[row.attending ? "yes" : "no"] += row.count;
+      if (!row.attending) continue;
+      if (studentIdentity && row.meal_identity === studentIdentity) answer.students += row.count;
+      if (!row.eligible) answer.outside += row.count;
+      addChildren(answer.children, row.child_type, row.count);
+      for (const fee of [target.fee, answer.fee]) {
+        if (price == null) {
+          const label = unsetLabel(row, activity);
+          if (!fee.unset.includes(label)) fee.unset.push(label);
+        } else { fee.sum += price * row.count; fee.known += row.count; }
+      }
+    }
+  }
+  return { total, districts };
 }
 
 async function showStatistics() {
-  const registrations = activeRegistrations(await allRegistrations());
+  const { statistics } = await api("registration_statistics");
   const activities = currentActivities();
+  const { total: overall, districts } = summarizeStatistics(statistics, activities);
+  const hasStudentIdentity = Boolean(reference.settings.student_statistics_identity_code);
+  document.querySelector("#student-statistics-hint").hidden = hasStudentIdentity;
   const rows = document.querySelector("#stats-rows");
   rows.replaceChildren();
-  const total = { fee: 0, cost: 0, subsidy: 0 };
+  const total = { cost: 0, subsidy: { sum: 0, known: 0, unset: [] } };
   const outside = [];
   for (const activity of activities) {
-    const [attending, notAttending, unanswered] = countAnswers(registrations, activity);
-    const attendees = registrations.filter((registration) => attends(registration, activity));
-    const fee = attendees.reduce((sum, registration) => sum + Meals.fee(activity, registration.meal_identity), 0);
-    // The subsidy is what the real cost exceeds the estimated fees by; without a cost there is none to show.
+    const answer = overall.activities.get(activity.id);
+    const attending = answer.yes, notAttending = answer.no, unanswered = overall.count - answer.yes - answer.no;
+    const fee = answer.fee;
+    // The subsidy is what the real cost exceeds the estimated fees by, over the people whose fee is set;
+    // without a cost there is none to show.
     const cost = activity.cost_amount == null ? null : attending * activity.cost_amount;
-    total.fee += fee;
+    const subsidy = cost === null ? null : { ...fee, sum: fee.known * activity.cost_amount - fee.sum };
     if (cost !== null) {
       total.cost += cost;
-      total.subsidy += cost - fee;
+      total.subsidy.sum += subsidy.sum;
+      total.subsidy.known += subsidy.known;
+      total.subsidy.unset.push(...subsidy.unset);
     }
-    const restricted = attendees.filter((registration) => !Meals.eligible(activity, {
-      hostingStatus: hostingOf(registration)?.status, pickupStatus: pickupOf(registration)?.status,
-      choices: registration.registration_choices, activities: reference.activities,
-    })).length;
+    const restricted = answer.outside;
     if (restricted) outside.push(`${activity.title} ${restricted} 人`);
-    const students = Meals.hasStudentPrice(activity)
-      ? attendees.filter((registration) => registration.meal_identity === "student").length : "—";
+    const students = hasStudentIdentity ? answer.students : "—";
     const row = document.createElement("tr");
-    for (const value of [activity.title, attending, students, notAttending, unanswered, `NT$${fee}`,
-      cost === null ? "—" : `NT$${cost}`, cost === null ? "—" : `NT$${cost - fee}`]) cell(row, value);
+    for (const value of [activity.title, attending, students]) cell(row, value);
+    childrenCell(row, answer.children);
+    for (const value of [notAttending, unanswered]) cell(row, value);
+    amountCell(row, fee);
+    cell(row, cost === null ? "—" : `NT$${cost}`);
+    amountCell(row, cost === null ? "—" : subsidy);
     rows.append(row);
   }
-  const noIdentity = registrations.filter((registration) => identityText(registration, activities) === "未回覆").length;
+  const noIdentity = overall.noIdentity;
   // Cost and subsidy cover only the activities with a cost set. A charged activity still without one is
   // named, so the totals are not read as complete; free activities such as meetings need no cost.
-  const uncosted = activities.filter((activity) => activity.fee_amount != null && activity.cost_amount == null);
+  const uncosted = activities.filter((activity) => priced(activity) && activity.cost_amount == null);
   const costText = activities.every((activity) => activity.cost_amount == null)
     ? "預估成本 —；預估補貼 —（尚未設定實際成本）"
-    : `預估成本 NT$${total.cost}；預估補貼 NT$${total.subsidy}`
-      + (uncosted.length ? `（${uncosted.map((activity) => activity.title).join("、")}尚未設定實際成本，未計入）` : "");
+    : `預估成本 NT$${total.cost}；預估補貼 ${amountText(total.subsidy)}`
+      + (uncosted.length ? `；${uncosted.map((activity) => activity.title).join("、")}尚未設定實際成本，未計入` : "");
   document.querySelector("#stats-summary").textContent = [
-    `有效登記 ${registrations.length} 筆；預估費用 NT$${total.fee}；${costText}。`,
-    noIdentity ? `用餐身分未回覆 ${noIdentity} 人，先以一般價計算。` : "",
+    `有效登記 ${overall.count} 筆；預估費用 ${amountText(overall.fee)}；${costText}。`,
+    noIdentity ? `用餐身分未回覆 ${noIdentity} 人。` : "",
     outside.length ? `不符報名對象（限定前已報名）：${outside.join("、")}。` : "",
   ].join("");
   const districtRows = document.querySelector("#district-stats-rows");
   districtRows.replaceChildren();
-  const districtTotal = { people: 0, fee: 0 };
   // A 全會所 card, then one per district; no 合計 row, since adding activities would count a person twice.
-  const districtCards = [districtActivityCard({ name: "全會所" }, registrations, activities)];
+  const districtCards = [districtActivityCard({ name: "全會所" }, overall, activities)];
   for (const district of reference.districts) {
-    const people = registrations.filter((item) => item.district_id === district.id);
-    const fee = people.reduce((sum, person) => sum + mealFee(person, activities), 0);
-    districtTotal.people += people.length;
-    districtTotal.fee += fee;
+    const people = districts.get(district.id);
     const row = document.createElement("tr");
-    for (const value of [district.name, people.length, `NT$${fee}`]) cell(row, value);
+    cell(row, district.name); cell(row, people.count); cell(row, hasStudentIdentity ? people.students : "—");
+    childrenCell(row, people.children); cell(row, amountText(people.fee));
     districtRows.append(row);
     districtCards.push(districtActivityCard(district, people, activities));
   }
-  totalRow(districtRows, [districtTotal.people, `NT$${districtTotal.fee}`]);
+  const districtSum = document.createElement("tr"); districtSum.className = "total";
+  cell(districtSum, "合計"); cell(districtSum, overall.count); cell(districtSum, hasStudentIdentity ? overall.students : "—");
+  childrenCell(districtSum, overall.children);
+  cell(districtSum, amountText(overall.fee)); districtRows.append(districtSum);
   document.querySelector("#district-activity-cards").replaceChildren(...districtCards);
-  showHostingStatistics(registrations);
+  showHostingStatistics(statistics, overall.count);
 }
 
 function totalRow(rows, values) {
@@ -603,14 +748,15 @@ function districtActivityCard(district, people, activities) {
   const title = document.createElement("h3");
   const count = document.createElement("small");
   count.className = "field-hint";
-  count.textContent = `有效登記 ${people.length} 人`;
+  count.textContent = `有效登記 ${people.count} 人`;
   title.append(district.name, " ", count);
   const table = document.createElement("table");
   table.className = "numeric";
   table.innerHTML = "<thead><tr><th>活動</th><th>參加</th><th>不參加</th><th>未回覆</th></tr></thead><tbody></tbody>";
   for (const activity of activities) {
     const row = document.createElement("tr");
-    for (const value of [activity.title, ...countAnswers(people, activity)]) cell(row, value);
+    const answer = people.activities.get(activity.id);
+    for (const value of [activity.title, answer.yes, answer.no, people.count - answer.yes - answer.no]) cell(row, value);
     table.tBodies[0].append(row);
   }
   const scroll = document.createElement("div");
@@ -620,29 +766,30 @@ function districtActivityCard(district, people, activities) {
   return card;
 }
 
-function showHostingStatistics(registrations) {
-  const answers = { hosting: 0, not_hosting: 0, family_registered: 0, unanswered: 0 };
+function showHostingStatistics(statistics, count) {
+  const answers = { hosting: 0, not_hosting: 0, family_registered: 0, unanswered: 0, not_applicable: 0 };
   const capacity = Object.fromEntries(Object.keys(Hosting.guestLabels).map((type) => [type, { registrations: 0, people: 0 }]));
-  const pickup = { yes: 0, no: 0, unanswered: 0, people: 0 };
-  for (const registration of registrations) {
-    const answer = hostingOf(registration);
-    answers[answer?.status ?? "unanswered"] += 1;
-    const pickupAnswer = pickupOf(registration);
-    pickup[pickupAnswer?.status ?? "unanswered"] += 1;
-    pickup.people += pickupAnswer?.count ?? 0;
-    if (answer?.status !== "hosting") continue;
-    capacity[answer.guest_type].registrations += 1;
-    capacity[answer.guest_type].people += answer.guest_count;
+  const pickup = { yes: 0, no: 0, unanswered: 0, not_applicable: 0, people: 0 };
+  for (const answer of statistics.hosting) {
+    answers[answer.status ?? "unanswered"] += answer.registrations;
+    if (answer.status !== "hosting") continue;
+    capacity[answer.guest_type].registrations += answer.registrations;
+    capacity[answer.guest_type].people += answer.people;
+  }
+  for (const answer of statistics.pickup) {
+    pickup[answer.status ?? "unanswered"] += answer.registrations;
+    pickup.people += answer.people;
   }
   const statusRows = document.querySelector("#hosting-status-stats-rows");
   statusRows.replaceChildren();
   for (const [status, total] of Object.entries(answers)) {
     if (status === "family_registered") continue;
+    if (status === "not_applicable" && !total) continue;
     const row = document.createElement("tr");
-    for (const value of [Hosting.statusLabels[status] ?? "未回覆", total]) cell(row, value);
+    for (const value of [status === "not_applicable" ? "不適用" : Hosting.statusLabels[status] ?? "未回覆", total]) cell(row, value);
     statusRows.append(row);
   }
-  totalRow(statusRows, [registrations.length]);
+  totalRow(statusRows, [count]);
   const capacityRows = document.querySelector("#hosting-capacity-stats-rows");
   capacityRows.replaceChildren();
   for (const [type, total] of Object.entries(capacity)) {
@@ -653,12 +800,12 @@ function showHostingStatistics(registrations) {
   totalRow(capacityRows, [answers.hosting, Object.values(capacity).reduce((sum, item) => sum + item.people, 0)]);
   const pickupRows = document.querySelector("#hosting-pickup-stats-rows");
   pickupRows.replaceChildren();
-  for (const [status, count] of [["是", pickup.yes], ["否", pickup.no], ["未回覆", pickup.unanswered]]) {
+  for (const [status, count] of [["是", pickup.yes], ["否", pickup.no], ["未回覆", pickup.unanswered], ...(pickup.not_applicable ? [["不適用", pickup.not_applicable]] : [])]) {
     const row = document.createElement("tr");
     for (const value of [status, count, status === "是" ? pickup.people : 0]) cell(row, value);
     pickupRows.append(row);
   }
-  totalRow(pickupRows, [registrations.length, pickup.people]);
+  totalRow(pickupRows, [count, pickup.people]);
 }
 
 function csvCell(value) {
@@ -679,7 +826,7 @@ function saveCsv(rows, filename) {
 
 function appendStatisticsTable(rows, title, table, note = "") {
   rows.push([title]);
-  for (const row of table.rows) rows.push([...row.cells].map((item) => item.textContent));
+  for (const row of table.rows) rows.push([...row.cells].map((item) => item.dataset.csv ?? item.textContent));
   if (note) rows.push([note]);
   rows.push([]);
 }
@@ -687,6 +834,9 @@ function appendStatisticsTable(rows, title, table, note = "") {
 async function downloadStatisticsCsv() {
   await showStatistics();
   const rows = [["統計摘要"], [document.querySelector("#stats-summary").textContent], []];
+  if (!document.querySelector("#student-statistics-hint").hidden) {
+    rows.push([document.querySelector("#student-statistics-hint").textContent], []);
+  }
   for (const [title, selector, noteSelector] of [
     ["各活動", "#stats-rows"], ["各區", "#district-stats-rows"],
     ["開家接待回覆", "#hosting-status-stats-rows", "#hosting-status-note"], ["接待對象", "#hosting-capacity-stats-rows"],
@@ -702,23 +852,34 @@ async function downloadStatisticsCsv() {
   saveCsv(rows, "registration-statistics.csv");
 }
 
+// What this person pays for the attended activities, by their identity. The CSV keeps it a number, the
+// set fees' sum, and names the activities left out in the next column.
+const personFee = (registration, activities) => {
+  const attended = activities.filter((activity) => attends(registration, activity));
+  const fees = attended.map((activity) => Meals.fee(activity, registration.meal_identity));
+  const { sum, known } = Meals.addFees(fees);
+  const unsetTitles = attended.filter((_, index) => fees[index] == null).map((activity) => activity.title);
+  return [known || !unsetTitles.length ? sum : "未設定", unsetTitles.join("、")];
+};
+
 async function downloadCsv() {
   const activities = currentActivities();
   const districts = new Map(reference.districts.map((item) => [item.id, item.name]));
-  const rows = [["流水號", "姓名", "區", "匯入狀態", ...activities.map((item) => item.title),
-    "開家接待", "接待對象", "可接待人數", "是否可以接機", "可接機人數", "用餐身分", "預估應付餐費"]];
+  const rows = [["流水號", "姓名", "區", "兒童", "家長姓名", "匯入狀態", ...activities.map((item) => item.title),
+    "開家接待", "接待對象", "可接待人數", "是否可以接機", "可接機人數", "用餐身分", "預估應付餐費", "餐費未計入的活動"]];
   for (const registration of activeRegistrations(await allRegistrations())) {
     const choices = new Map(registration.registration_choices.map((item) => [item.activity_id, item.attending]));
     const hosting = hostingOf(registration);
     const pickup = pickupOf(registration);
     rows.push([
       registration.serial_no, registration.full_name, districts.get(registration.district_id),
+      childLabel(registration.child_type), registration.parent_name ?? "",
       label("import", registration.import_status),
       ...activities.map((item) => !choices.has(item.id) ? "未回覆" : choices.get(item.id) ? "參加" : "不參加"),
-      hosting ? Hosting.statusLabels[hosting.status] : "未回覆",
+      hosting ? Hosting.statusLabels[hosting.status] : Meals.answersHosting(registration.meal_identity ?? "general") ? "未回覆" : "不適用",
       hosting?.guest_type ? Hosting.guestLabels[hosting.guest_type] : "",
-      hosting?.guest_count ?? "", pickup ? Pickup.labels[pickup.status] : "", pickup?.count ?? "",
-      identityText(registration, activities), mealFee(registration, activities),
+      hosting?.guest_count ?? "", pickup ? Pickup.labels[pickup.status] : Meals.answersHosting(registration.meal_identity ?? "general", "pickup") ? "" : "不適用", pickup?.count ?? "",
+      identityText(registration, activities), ...personFee(registration, activities),
     ]);
   }
   saveCsv(rows, "registration-export.csv");
@@ -726,7 +887,7 @@ async function downloadCsv() {
 
 // A new registration answers every activity. An edit only has to keep existing answers:
 // an activity the person never answered stays 未回覆 until they choose (requireAll = false).
-function renderChoiceFields(container, choices = new Map(), requireAll = true, identity = null) {
+function renderChoiceFields(container, choices = new Map(), requireAll = true) {
   container.replaceChildren();
   for (const activity of currentActivities()) {
     const item = document.createElement("div");
@@ -737,9 +898,13 @@ function renderChoiceFields(container, choices = new Map(), requireAll = true, i
     item.append(title);
     if (!requireAll && !choices.has(activity.id)) {
       const unanswered = document.createElement("span");
-      unanswered.className = "hint";
+      unanswered.className = "hint unanswered-hint";
       unanswered.textContent = "（未回覆，可留空）";
-      item.append(unanswered);
+      // Shown instead of the hint and both options while viewing (staff.css).
+      const tag = document.createElement("span");
+      tag.className = "unanswered-tag";
+      tag.textContent = "未回覆";
+      item.append(unanswered, tag);
     }
     for (const [value, label] of [["true", "參加"], ["false", "不參加"]]) {
       const option = document.createElement("label");
@@ -754,24 +919,76 @@ function renderChoiceFields(container, choices = new Map(), requireAll = true, i
     }
     container.append(item);
   }
-  Meals.render(container, currentActivities(), identity);
+  Meals.render(container, currentActivities());
 }
 
+// Staff, like the public form, may answer only an open survey that the selected identity is asked.
+const surveyOpenFor = (form, kind) => Boolean(reference.settings[`is_${kind}_open`] && Meals.answersHosting(form.elements.meal_identity.value, kind));
+
+// editable is false while a record is only being viewed.
+function syncChildFields(form, editable = true) {
+  const child = Boolean(Meals.childType(form.elements.meal_identity.value));
+  form.querySelector(".preschool-hint").hidden = form.elements.meal_identity.value !== "preschool";
+  form.querySelector(".child-hint").hidden = !(child && editable);
+  form.querySelector(".parent-name").hidden = !child;
+  form.elements.parent_name.disabled = !child || !editable;
+  const panel = form.querySelector(".hosting-panel");
+  // While editing, an identity that can answer neither survey gets no empty panel.
+  panel.hidden = editable && !surveyOpenFor(form, "hosting") && !surveyOpenFor(form, "pickup");
+  panel.disabled = !editable;
+  for (const kind of ["hosting", "pickup"]) {
+    const allowed = surveyOpenFor(form, kind);
+    const fields = form.querySelector(kind === "hosting" ? '[id$="registration-hosting"], #detail-hosting' : '[id$="registration-pickup"], #detail-pickup');
+    // Viewing still shows the saved answer; saving a survey staff may not answer stores 否.
+    fields.hidden = editable && !allowed;
+    for (const control of fields.querySelectorAll("input, select")) {
+      control.disabled = !editable || !allowed;
+      // The record view keeps Hosting.render's rule: an existing answer stays required.
+      if (control.type === "radio" && form.id === "new-registration-form") control.required = allowed;
+    }
+    // Re-disable the detail dropdowns that the answer hides, which the loop above just enabled.
+    if (editable && allowed) (kind === "hosting" ? Hosting : Pickup).sync(fields);
+  }
+}
+// The parent's name to send: trimmed for a child, nothing otherwise; throws when a child has none.
+function parentNameFrom(form) {
+  if (!Meals.childType(form.elements.meal_identity.value)) return null;
+  const name = form.elements.parent_name.value.trim();
+  if (!name) throw new Error("請填寫家長姓名");
+  return name;
+}
+
+// The new-registration form and the record view, each with its own choices, hosting and pickup blocks.
+const registrationParts = {
+  new: ["#new-registration-form", "#new-registration-choices", "#new-registration-hosting", "#new-registration-pickup"],
+  detail: ["#edit-registration-form", "#detail-choices", "#detail-hosting", "#detail-pickup"],
+};
 // Staff follow the same audience and identity rules as the public form.
-const checkedStatus = (selector) => document.querySelector(`${selector} [name="hosting_status"]:checked`)?.value ?? null;
-function syncNewMeals() {
-  Meals.sync(document.querySelector("#new-registration-choices"), currentActivities(), {
-    hostingStatus: checkedStatus("#new-registration-hosting"),
-    pickupStatus: Pickup.read(document.querySelector("#new-registration-pickup"))?.status,
+function syncMeals(parts) {
+  const [form, choices, hosting, pickup] = parts.map((selector) => document.querySelector(selector));
+  Meals.sync(choices, currentActivities(), {
+    skipsHosting: !Meals.answersHosting(form.elements.meal_identity.value),
+    skipsPickup: !Meals.answersHosting(form.elements.meal_identity.value, "pickup"),
+    hostingStatus: hosting.querySelector('[name="hosting_status"]:checked')?.value ?? null,
+    pickupStatus: Pickup.read(pickup)?.status,
   });
 }
-function syncDetailMeals() {
-  // Only while editing: sync would re-enable allowed choices and show what saving would change.
-  if (!editingRegistration) return;
-  Meals.sync(document.querySelector("#detail-choices"), currentActivities(), {
-    hostingStatus: checkedStatus("#detail-hosting"),
-    pickupStatus: Pickup.read(document.querySelector("#detail-pickup"))?.status,
-  });
+const syncNewMeals = () => syncMeals(registrationParts.new);
+// Only while editing: sync would re-enable allowed choices and show what saving would change.
+const syncDetailMeals = () => editingRegistration && syncMeals(registrationParts.detail);
+
+// What both registration forms send; throws when a child has no parent name.
+function registrationFields(parts) {
+  const [form, , hosting, pickup] = parts.map((selector) => document.querySelector(selector));
+  const data = new FormData(form);
+  const parentName = parentNameFrom(form);
+  return {
+    full_name: data.get("full_name"), district_id: Number(data.get("district_id")), choices: choicesFromForm(form),
+    hosting: surveyOpenFor(form, "hosting") ? Hosting.read(hosting) : null,
+    pickup: surveyOpenFor(form, "pickup") ? Pickup.read(pickup) : null,
+    meal_identity: Meals.readIdentity(form),
+    child_type: Meals.childType(form.elements.meal_identity.value), parent_name: parentName ?? undefined,
+  };
 }
 
 // Redrawn whenever districts or activities change, so it keeps what staff already entered.
@@ -781,8 +998,11 @@ function renderNewRegistrationForm() {
   filter.replaceChildren(new Option("全部區", ""));
   for (const item of reference.districts) filter.add(new Option(item.name, item.id));
   filter.value = filtered;
+  Meals.renderIdentityFilter(document.querySelector("#search-form .identity-filter-menu"), reference.used_identity_codes ?? []);
+  syncIdentityFilter();
   const form = document.querySelector("#new-registration-form");
   const entered = new FormData(form);
+  Meals.renderIdentity(form.elements.meal_identity);
   const districts = form.elements.district_id;
   districts.replaceChildren(new Option("請選擇", ""));
   for (const district of reference.districts) {
@@ -790,12 +1010,13 @@ function renderNewRegistrationForm() {
   }
   districts.value = entered.get("district_id") ?? "";
   const choices = new Map(choicesFromForm(form).map((item) => [item.activity_id, item.attending]));
-  renderChoiceFields(document.querySelector("#new-registration-choices"), choices, true, Meals.readIdentity(form));
+  renderChoiceFields(document.querySelector("#new-registration-choices"), choices, true);
   const hosting = document.querySelector("#new-registration-hosting");
   // Required only while the public survey is open, matching the public form.
-  Hosting.render(hosting, Hosting.read(hosting), Boolean(reference.settings.is_hosting_open));
+  Hosting.render(hosting, Hosting.read(hosting), surveyOpenFor(form, "hosting"));
   const pickup = document.querySelector("#new-registration-pickup");
-  Pickup.render(pickup, Pickup.read(pickup), Boolean(reference.settings.is_pickup_open));
+  Pickup.render(pickup, Pickup.read(pickup), surveyOpenFor(form, "pickup"));
+  syncChildFields(form);
   syncNewMeals();
 }
 
@@ -806,30 +1027,33 @@ function choicesFromForm(form) {
 
 // Opens in view mode, every field locked, so looking at a record cannot change it by a stray tap;
 // 修改登記資料 reopens it with editing = true. Reopening from the stored record also undoes any edit.
+function renderDetailTitle(registration) {
+  const title = document.querySelector("#detail-title");
+  title.textContent = `登記 #${registration.serial_no}｜${registration.full_name}`;
+  appendIdentityBadge(title, registration);
+}
+
 function openRegistration(registration, editing = false) {
   const switching = selectedRegistration?.id !== registration.id;
   selectedRegistration = registration;
   editingRegistration = editing && registration.record_status === "active";
   const detail = document.querySelector("#registration-detail");
   detail.hidden = false;
-  document.querySelector("#detail-title").textContent = `登記 #${registration.serial_no}｜${registration.full_name}`;
+  renderDetailTitle(registration);
   const form = document.querySelector("#edit-registration-form");
   form.elements.full_name.value = registration.full_name;
+  Meals.renderIdentity(form.elements.meal_identity, registration.meal_identity);
+  form.elements.parent_name.value = registration.parent_name ?? "";
   const districts = form.elements.district_id;
-  districts.replaceChildren();
-  for (const district of reference.districts) {
-    const option = document.createElement("option");
-    option.value = district.id;
-    option.textContent = district.name;
-    option.selected = district.id === registration.district_id;
-    districts.append(option);
-  }
+  districts.replaceChildren(...reference.districts.map((district) =>
+    new Option(district.name, district.id, false, district.id === registration.district_id)));
   const choices = new Map(registration.registration_choices.map((choice) => [choice.activity_id, choice.attending]));
-  renderChoiceFields(document.querySelector("#detail-choices"), choices, false, registration.meal_identity ?? null);
+  renderChoiceFields(document.querySelector("#detail-choices"), choices, false);
   document.querySelector("#import-form").elements.status.value = registration.import_status;
   // Only active rows can be edited; a historical cancelled row can still be voided.
   const isActive = registration.record_status === "active";
   form.querySelectorAll("input, select, button").forEach((control) => control.disabled = !editingRegistration);
+  form.classList.toggle("viewing", !editingRegistration);
   document.querySelector("#start-registration-edit").hidden = !isActive || editingRegistration;
   document.querySelector("#registration-edit-buttons").hidden = !editingRegistration;
   // Rendered after the loop above, which would otherwise re-enable the hidden hosting fields.
@@ -838,11 +1062,21 @@ function openRegistration(registration, editing = false) {
   const hostingFields = document.querySelector("#detail-hosting");
   Hosting.render(hostingFields, hosting, hosting !== null);
   Pickup.render(document.querySelector("#detail-pickup"), pickupOf(registration), pickupOf(registration) !== null);
+  // Invalidated history matters only where the identity is asked again, like on the public page.
+  for (const [kind, container, raw, renderer] of [
+    ["hosting", hostingFields, registration.registration_hosting, Hosting],
+    ["pickup", document.querySelector("#detail-pickup"), registration.registration_pickup, Pickup],
+  ]) {
+    if (raw?.answer_valid === false && Meals.answersHosting(registration.meal_identity ?? "general", kind)) {
+      const history = document.createElement("p"); history.className = "hint";
+      history.textContent = renderer.summary(raw); container.append(history);
+    }
+  }
   // The fieldset disables every hosting control, whatever its tag; sync() cannot re-enable them.
-  hostingFields.closest("fieldset").disabled = !editingRegistration;
-  // In view mode sync() does not run, so show the stored identity whenever the choices need one.
-  const identity = document.querySelector("#detail-choices .meal-identity");
-  if (identity) identity.hidden = !Meals.needsIdentity(currentActivities(), registration.registration_choices);
+  // View mode disables the controls; editing hides surveys staff may not answer.
+  syncChildFields(form, editingRegistration);
+  // Rendered after the loop above, which disables every button in view mode.
+  showParentChildren(registration);
   syncDetailMeals();
   const voidForm = document.querySelector("#void-form");
   voidForm.reset();
@@ -850,11 +1084,56 @@ function openRegistration(registration, editing = false) {
   if (switching) detail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-async function refreshRegistration() {
-  await loadRegistrations();
+// A parent's record lists the children naming them. While viewing, a name opens that child's record;
+// while editing it is plain text, so a click cannot drop unsaved changes.
+function showParentChildren(registration) {
+  const block = document.querySelector("#detail-children");
+  const children = registration.children ?? [];
+  block.hidden = !children.length;
+  block.querySelector("ul").replaceChildren(...children.map((child) => {
+    const item = document.createElement("li");
+    const label = `#${child.serial_no} ${child.full_name}`;
+    if (editingRegistration) item.textContent = label;
+    else {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "link-button";
+      open.textContent = label;
+      open.addEventListener("click", () => openChildRegistration(child.serial_no));
+      item.append(open);
+    }
+    return item;
+  }));
+}
+
+// The list switches to a search for the child's serial number, so the record stays open after a save;
+// 清除條件 brings the full list back.
+async function openChildRegistration(serial) {
+  if (!await showRegistrations(0, String(serial), "", [])) return;
+  searchForm.elements.search.value = String(serial);
+  searchForm.elements.district_id.value = "";
+  setIdentityFilter([]);
+  updateClearSearch();
+  const child = visibleRegistrations.find((item) => item.serial_no === serial);
+  if (child) await loadRegistrationDetail(child);
+  else showMessage("找不到這位兒童的有效登記，請重新整理名單。", true);
+}
+
+async function loadRegistrationDetail(registration) {
+  const request = ++detailRequest;
+  let result;
+  // A newer click supersedes this load, its failure included; an expired login is still reported.
+  try { result = await api("get_registration", { registration_id: registration.id }); }
+  catch (error) { if (request === detailRequest || !session) throw error; return; }
+  if (request === detailRequest && session) openRegistration(result.registration);
+}
+
+// After a save the caller already shows the saved record, and only a filter can change the count.
+async function refreshRegistration(saved) {
+  await loadRegistrations(!saved || Boolean(search || district || identityFilter.length));
   const updated = visibleRegistrations.find((item) => item.id === selectedRegistration?.id);
-  if (updated) openRegistration(updated);
-  else document.querySelector("#registration-detail").hidden = true;
+  if (!updated) document.querySelector("#registration-detail").hidden = true;
+  else if (!saved) await loadRegistrationDetail(updated);
 }
 
 async function loadStaff() {
@@ -907,7 +1186,7 @@ async function toggleStaff(person) {
 }
 
 async function openStaff() {
-  const result = await api("me");
+  const result = await api("me", { include_reference: true });
   profile = result.profile;
   loginPanel.hidden = true;
   showChangePassword(profile.must_change_password);
@@ -918,7 +1197,9 @@ async function openStaff() {
   showView(sessionStorage.getItem(viewKey));
   showAdminSections(false);
   try {
-    reference = await api("list_reference");
+    if (result.reference_error) throw new Error(result.reference_error);
+    reference = result.settings ? result : await api("list_reference");
+    Meals.configure(reference.identities, true, reference.settings);
     // renderReference also builds the new-registration form, so it runs once either way.
     if (isAdmin) renderReference();
     else renderNewRegistrationForm();
@@ -931,6 +1212,166 @@ async function openStaff() {
   showAdminSections(isAdmin);
 }
 
+// 用餐身分: one price field per identity but 一般 (fee_amount); blank means unset, not the general price.
+function renderIdentityPrices(activity = {}) {
+  const container = document.querySelector("#identity-prices");
+  container.replaceChildren();
+  for (const identity of reference.identities ?? []) {
+    if (identity.code === "general") {
+      // 一般 can be renamed; its price field is fee_amount, already in the page.
+      document.querySelector("#general-price-name").textContent = identity.name;
+      document.querySelector('#activity-form [name="fee_amount"]').setAttribute("aria-label", `${identity.name}每人費用`);
+      continue;
+    }
+    const label = document.createElement("label");
+    label.className = "activity-price-row";
+    const name = document.createElement("span");
+    name.textContent = `${identity.name}${identity.is_active ? "" : "（已停用）"}`;
+    const input = document.createElement("input");
+    Object.assign(input, { type: "number", min: "0", step: "1", max: "2147483647", placeholder: "未設定" });
+    input.dataset.identityPrice = identity.code;
+    input.setAttribute("aria-label", `${identity.name}每人費用`);
+    input.value = activity.activity_identity_prices?.find((price) => price.identity_code === identity.code)?.fee_amount ?? "";
+    label.append(name, input);
+    container.append(label);
+  }
+}
+
+const identityPricesFrom = (form) => [...form.querySelectorAll("[data-identity-price]")]
+  .filter((input) => input.value !== "")
+  .map((input) => ({ identity_code: input.dataset.identityPrice, fee_amount: Number(input.value) }));
+
+// Reserved identities stay active and publicly selectable.
+const reservedIdentity = (code) => ["general", "student", "child", "preschool"].includes(code);
+
+function renderStudentStatisticsIdentity() {
+  const select = document.querySelector('#student-statistics-identity-form [name="code"]');
+  const selected = reference.settings.student_statistics_identity_code ?? "";
+  select.replaceChildren(new Option("未指定", ""));
+  for (const identity of reference.identities ?? []) {
+    // Of the reserved identities only 學生 can be the 學生統計身分 (202611130001).
+    if ((identity.is_active && (identity.code === "student" || !reservedIdentity(identity.code))) || identity.code === selected) {
+      select.add(new Option(`${identity.name}${identity.is_active ? "" : "（已停用）"}`, identity.code));
+    }
+  }
+  select.value = selected;
+}
+
+document.querySelector("#student-statistics-identity-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    await api("save_reference", { kind: "student_statistics_identity", data: { code: form.elements.code.value || null } });
+    reference = await api("list_reference");
+    // The reload can carry identity changes made elsewhere, so everything showing identities is redrawn.
+    redrawIdentities();
+    if (document.querySelector("#district-stats-rows").children.length) await showStatistics();
+    showMessage("學生統計身分已儲存。");
+  } catch (error) { showMessage(error.message, true); }
+  finally { button.disabled = false; }
+});
+
+function renderIdentities() {
+  if (document.querySelector("#admin-identities").classList.contains("reordering")) return;
+  const rows = document.querySelector("#identity-rows");
+  rows.replaceChildren();
+  for (const identity of reference.identities ?? []) {
+    const row = document.createElement("tr");
+    row.dataset.code = identity.code;
+    cell(row, identity.name);
+    cell(row, identity.is_active ? "啟用" : "停用");
+    cell(row, identity.public_selectable ? "是" : "僅後台");
+    appendIdentityBadge(cell(row, identity.show_badge ? "" : "不顯示"), { meal_identity: identity.code });
+    editButton(row, () => {
+      const form = document.querySelector("#identity-form");
+      fillForm(form, identity);
+      // The stored code, not the color picker's lowercase copy, so saving unchanged writes no audit row.
+      form.elements.badge_color_hex.value = identity.badge_color ?? "#e1effe";
+      form.elements.is_active.disabled = reservedIdentity(identity.code);
+      form.elements.public_selectable.disabled = reservedIdentity(identity.code);
+      setEditing(form, { id: identity.code, title: identity.name });
+      form.querySelector('button[type="reset"]').hidden = false;
+    });
+    if (!reservedIdentity(identity.code)) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "secondary";
+      remove.textContent = "刪除";
+      remove.addEventListener("click", () => {
+        if (confirm(`刪除身分「${identity.name}」？已使用的身分無法刪除。`)) saveIdentity("delete_identity", { code: identity.code });
+      });
+      row.lastElementChild.append(remove);
+    }
+    const handleCell = cell(row, "");
+    handleCell.className = "reorder-col";
+    const number = document.createElement("span");
+    number.className = "sort-number";
+    number.textContent = rows.children.length + 1;
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "drag-handle";
+    handle.textContent = "☰";
+    handle.setAttribute("aria-label", `拖曳排序：${identity.name}`);
+    handleCell.append(number, handle);
+    rows.append(row);
+  }
+}
+
+async function saveIdentity(kind, data) {
+  if (document.querySelector("#admin-identities").classList.contains("reordering")) return;
+  if (identitySaving) return;
+  identitySaving = true;
+  identityReorderButton.disabled = true;
+  try { await persistIdentity(kind, data); }
+  finally { identitySaving = false; identityReorderButton.disabled = false; }
+}
+
+async function persistIdentity(kind, data) {
+  try {
+    await api("save_reference", { kind, data });
+    reference = await api("list_reference");
+    redrawIdentities();
+    document.querySelector("#identity-form").reset();
+    showMessage("身分已更新。");
+  } catch (error) { showMessage(error.message, true); return; }
+  // The identity is already saved, so a failed redraw must not read as a failed save.
+  try {
+    await loadRegistrations();
+    if (selectedRegistration) renderDetailTitle(selectedRegistration);
+    // 各區 always has its 合計 row once statistics were shown, even with no published activity.
+    if (document.querySelector("#district-stats-rows").children.length) await showStatistics();
+  } catch (error) { showMessage(`身分已更新，但畫面未能重新整理：${error.message}`, true); }
+}
+
+document.querySelector("#identity-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const { elements } = event.currentTarget;
+  saveIdentity("identity", { code: elements.code.value, name: elements.name.value,
+    is_active: elements.is_active.checked, public_selectable: elements.public_selectable.checked,
+    show_badge: elements.show_badge.checked, badge_color: elements.badge_color_hex.value });
+});
+
+document.querySelector('#identity-form [name="badge_color"]').addEventListener("input", (event) => {
+  event.target.form.elements.badge_color_hex.value = event.target.value;
+});
+document.querySelector('#identity-form [name="badge_color_hex"]').addEventListener("input", (event) => {
+  if (/^#[0-9a-f]{6}$/i.test(event.target.value)) event.target.form.elements.badge_color.value = event.target.value;
+});
+document.querySelector("#identity-form").addEventListener("reset", (event) => {
+  const { elements } = event.currentTarget;
+  elements.code.value = "";
+  elements.is_active.disabled = false;
+  elements.public_selectable.disabled = false;
+  // 取消編輯 shows only while an identity is being edited; saving or deleting also lands here.
+  setEditing(event.currentTarget, null);
+  const cancel = event.currentTarget.querySelector('button[type="reset"]');
+  // Hiding the focused button would drop keyboard focus to the top of the page.
+  if (document.activeElement === cancel) elements.name.focus();
+  cancel.hidden = true;
+});
+
 for (const [selector, kind] of [
   ["#settings-form", "settings"], ["#hosting-settings-form", "hosting"],
   ["#activity-form", "activity"], ["#program-form", "program"],
@@ -940,7 +1381,7 @@ for (const [selector, kind] of [
   if (!["settings", "hosting"].includes(kind)) form.addEventListener("reset", () => {
     setEditing(form, null);
     // The activity being edited was left out of its own audience options; a new one may pick it.
-    if (kind === "activity") setAudienceOptions();
+    if (kind === "activity") { setAudienceOptions(); renderIdentityPrices(); }
   });
 }
 
@@ -957,7 +1398,77 @@ let endDrag = null;
 
 const activityOrder = () => Array.from(activityRows.rows, (row) => Number(row.dataset.id));
 
+const identitySection = document.querySelector("#admin-identities");
+const identityRows = document.querySelector("#identity-rows");
+const identityReorderButton = document.querySelector("#reorder-identities");
+const identityCancelButton = document.querySelector("#cancel-identity-reorder");
+const identityOrder = () => Array.from(identityRows.rows, (row) => row.dataset.code);
+let identityOrderBefore = "";
+let identitySaving = false;
+
+function setIdentityReordering(on) {
+  endDrag?.();
+  identitySection.classList.toggle("reordering", on);
+  identityReorderButton.textContent = on ? "完成排序" : "調整排序";
+  identityReorderButton.classList.toggle("secondary", !on);
+  identityCancelButton.hidden = !on;
+  document.querySelector("#identity-reorder-hint").hidden = !on;
+  document.querySelector("#identity-form").inert = on;
+  for (const button of identityRows.querySelectorAll("button:not(.drag-handle)")) button.disabled = on;
+}
+
+function redrawIdentities() {
+  Meals.configure(reference.identities, true, reference.settings);
+  renderIdentities();
+  renderStudentStatisticsIdentity();
+  renderSurveyIdentities(true);
+  // Prices typed into an open activity form survive the redraw of its fields.
+  renderIdentityPrices({ activity_identity_prices: identityPricesFrom(document.querySelector("#activity-form")) });
+  // Each activity's 費用 line names identities in 身分別 order.
+  renderReferenceRows("#activity-rows");
+  renderNewRegistrationForm();
+}
+
+identityReorderButton.addEventListener("click", async () => {
+  if (identitySaving) return;
+  if (!identitySection.classList.contains("reordering")) {
+    identityOrderBefore = JSON.stringify(identityOrder());
+    setIdentityReordering(true);
+    return;
+  }
+  endDrag?.();
+  const order = identityOrder();
+  if (JSON.stringify(order) === identityOrderBefore) return setIdentityReordering(false);
+  identityReorderButton.disabled = identityCancelButton.disabled = true;
+  identityRows.inert = true;
+  try {
+    await api("reorder_identities", { identity_codes: order });
+    const byCode = new Map(reference.identities.map((item) => [item.code, item]));
+    reference.identities = order.map((code, index) => ({ ...byCode.get(code), sort_order: index + 1 }));
+  } catch (error) {
+    if (error.status !== 409) return showMessage(error.message, true);
+    try { reference.identities = (await api("list_reference")).identities; }
+    catch (reloadError) { return showMessage(`${error.message}（重新載入失敗：${reloadError.message}）`, true); }
+    setIdentityReordering(false);
+    redrawIdentities();
+    return showMessage("身分清單已有變動，已重新載入，請再調整一次排序。", true);
+  } finally {
+    identityReorderButton.disabled = identityCancelButton.disabled = false;
+    identityRows.inert = false;
+  }
+  setIdentityReordering(false);
+  redrawIdentities();
+  showMessage("身分排序已儲存。");
+});
+
+identityCancelButton.addEventListener("click", () => {
+  setIdentityReordering(false);
+  renderIdentities();
+});
+
 function setReordering(on) {
+  // Not just !on: clearSession calls this before any reference is loaded, when there is nothing to redraw.
+  const leaving = !on && activitySection.classList.contains("reordering");
   // A drag still running would move a row that a redraw has already replaced.
   endDrag?.();
   activitySection.classList.toggle("reordering", on);
@@ -965,6 +1476,8 @@ function setReordering(on) {
   reorderButton.classList.toggle("secondary", !on);
   cancelReorderButton.hidden = !on;
   document.querySelector("#reorder-hint").hidden = !on;
+  // Every way out draws fresh rows from reference: the saved or restored order, and identity changes made meanwhile.
+  if (leaving) return renderReferenceRows("#activity-rows");
   for (const button of activityRows.querySelectorAll("button:not(.drag-handle)")) button.disabled = on;
   // The details list is hidden while reordering; inert keeps its title from being a tab stop announced as
   // expanded, or toggled into a state nobody sees that reopens after 完成排序.
@@ -992,7 +1505,6 @@ reorderButton.addEventListener("click", async () => {
       return showMessage(`${error.message}（重新載入失敗：${reloadError.message}）`, true);
     }
     setReordering(false);
-    renderReferenceRows("#activity-rows");
     renderNewRegistrationForm();
     return showMessage("活動清單已有變動，已重新載入，請再調整一次排序。", true);
   } finally {
@@ -1003,7 +1515,6 @@ reorderButton.addEventListener("click", async () => {
   const byId = new Map(reference.activities.map((item) => [item.id, item]));
   reference.activities = order.map((id, index) => ({ ...byId.get(id), sort_order: index + 1 }));
   setReordering(false);
-  renderReferenceRows("#activity-rows");
   renderNewRegistrationForm();
   // An open activity edit still holds the old sort_order and would undo this order when saved.
   const activityForm = document.querySelector("#activity-form");
@@ -1012,81 +1523,86 @@ reorderButton.addEventListener("click", async () => {
   showMessage("活動排序已儲存。");
 });
 
-cancelReorderButton.addEventListener("click", () => {
-  renderReferenceRows("#activity-rows");
-  setReordering(false);
-});
+cancelReorderButton.addEventListener("click", () => setReordering(false));
 
-activityRows.addEventListener("pointerdown", (event) => {
-  const handle = event.target.closest(".drag-handle");
-  // Only the first finger or the main mouse button drags; a second finger or a right-click does not.
-  if (!handle || !activitySection.classList.contains("reordering") || !event.isPrimary || event.button !== 0) return;
-  event.preventDefault();
-  endDrag?.();
-  const row = handle.closest("tr");
-  row.classList.add("dragging");
-  let clientX;
-  let clientY;
-  // The sticky navigation bar covers the top of the page on desktop, so its bottom is the top edge.
-  const topEdge = () => Math.max(0, staffNav.getBoundingClientRect().bottom);
-  const place = () => {
-    const y = Math.max(clientY, topEdge() + 1);
-    const target = document.elementFromPoint(clientX, y)?.closest("#activity-rows tr");
-    if (!target || target === row) return;
-    const { top, height } = target.getBoundingClientRect();
-    activityRows.insertBefore(row, y < top + height / 2 ? target : target.nextElementSibling);
-  };
-  // touch-action: none stops the finger from scrolling, so scroll while the pointer rests near
-  // the top or bottom edge; otherwise a row could only reach positions already on screen.
-  let frame;
-  const autoScroll = () => {
-    const edge = 56;
-    const step = clientY === undefined ? 0 : clientY < topEdge() + edge ? -10 : clientY > window.innerHeight - edge ? 10 : 0;
-    if (step) {
-      window.scrollBy(0, step);
-      place();
-    }
+for (const [sortRows, sortSection] of [[activityRows, activitySection], [identityRows, identitySection]]) {
+  sortRows.addEventListener("pointerdown", (event) => {
+    const handle = event.target.closest(".drag-handle");
+    // Only the first finger or the main mouse button drags; a second finger or a right-click does not.
+    if (!handle || !sortSection.classList.contains("reordering") || sortRows.inert || !event.isPrimary || event.button !== 0) return;
+    event.preventDefault();
+    endDrag?.();
+    const row = handle.closest("tr");
+    row.classList.add("dragging");
+    let clientX;
+    let clientY;
+    // The sticky navigation bar covers the top of the page on desktop, so its bottom is the top edge.
+    const topEdge = () => Math.max(0, staffNav.getBoundingClientRect().bottom);
+    const place = () => {
+      const y = Math.max(clientY, topEdge() + 1);
+      const target = document.elementFromPoint(clientX, y)?.closest("tr");
+      if (target?.parentElement !== sortRows || target === row) return;
+      const { top, height } = target.getBoundingClientRect();
+      sortRows.insertBefore(row, y < top + height / 2 ? target : target.nextElementSibling);
+    };
+    // touch-action: none stops the finger from scrolling, so scroll while the pointer rests near
+    // the top or bottom edge; otherwise a row could only reach positions already on screen.
+    let frame;
+    const autoScroll = () => {
+      const edge = 56;
+      const step = clientY === undefined ? 0 : clientY < topEdge() + edge ? -10 : clientY > window.innerHeight - edge ? 10 : 0;
+      if (step) {
+        window.scrollBy(0, step);
+        place();
+      }
+      frame = requestAnimationFrame(autoScroll);
+    };
     frame = requestAnimationFrame(autoScroll);
-  };
-  frame = requestAnimationFrame(autoScroll);
-  // Listen on window: pointer capture is not reliable across browsers, and a missed capture would
-  // send moves to whatever element is under the pointer instead of this handle.
-  const finish = () => {
-    cancelAnimationFrame(frame);
-    row.classList.remove("dragging");
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", end);
-    window.removeEventListener("pointercancel", end);
-    window.removeEventListener("blur", finish);
-    endDrag = null;
-  };
-  const move = (moveEvent) => {
-    if (moveEvent.pointerId !== event.pointerId) return;
-    // A release outside the window may never send pointerup; no button held means the drag is over.
-    if (moveEvent.buttons === 0) return finish();
-    ({ clientX, clientY } = moveEvent);
-    place();
-  };
-  const end = (endEvent) => {
-    if (endEvent.pointerId === event.pointerId) finish();
-  };
-  endDrag = finish;
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", end);
-  window.addEventListener("pointercancel", end);
-  window.addEventListener("blur", finish);
-});
+    // Listen on window: pointer capture is not reliable across browsers, and a missed capture would
+    // send moves to whatever element is under the pointer instead of this handle.
+    const finish = () => {
+      cancelAnimationFrame(frame);
+      row.classList.remove("dragging");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      window.removeEventListener("blur", finish);
+      endDrag = null;
+    };
+    const move = (moveEvent) => {
+      if (moveEvent.pointerId !== event.pointerId) return;
+      // A release outside the window may never send pointerup; no button held means the drag is over.
+      if (moveEvent.buttons === 0) return finish();
+      ({ clientX, clientY } = moveEvent);
+      place();
+    };
+    const end = (endEvent) => {
+      if (endEvent.pointerId === event.pointerId) finish();
+    };
+    endDrag = finish;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    window.addEventListener("blur", finish);
+  });
 
-activityRows.addEventListener("keydown", (event) => {
-  const handle = event.target.closest(".drag-handle");
-  if (!handle || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
-  event.preventDefault();
-  const row = handle.closest("tr");
-  const sibling = event.key === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling;
-  if (!sibling) return;
-  sibling.insertAdjacentElement(event.key === "ArrowUp" ? "beforebegin" : "afterend", row);
-  handle.focus();
-});
+  sortRows.addEventListener("keydown", (event) => {
+    const handle = event.target.closest(".drag-handle");
+    if (!handle || sortRows.inert || !sortSection.classList.contains("reordering") || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    const row = handle.closest("tr");
+    const sibling = event.key === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling;
+    if (!sibling) return;
+    const before = event.key === "ArrowUp" ? sibling : sibling.nextElementSibling;
+    if (sortRows.moveBefore) sortRows.moveBefore(row, before);
+    else sortRows.insertBefore(row, before);
+    row.scrollIntoView({ block: "nearest", inline: "nearest" });
+    handle.focus({ preventScroll: true });
+    if (sortRows === identityRows) {
+      document.querySelector("#identity-reorder-status").textContent = `${row.cells[0].textContent}，第 ${[...sortRows.rows].indexOf(row) + 1} 位`;
+    }
+  });
+}
 
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1181,15 +1697,15 @@ document.querySelector("#close-staff-editor").addEventListener("click", () => {
 });
 
 // A failed load keeps the previous page and conditions, so the controls match the rows on screen.
-async function showRegistrations(nextPage, nextSearch = search, nextDistrict = district) {
-  const previous = [page, search, district];
-  [page, search, district] = [nextPage, nextSearch, nextDistrict];
+async function showRegistrations(nextPage, nextSearch = search, nextDistrict = district, nextIdentityFilter = identityFilter) {
+  const previous = [page, search, district, identityFilter];
+  [page, search, district, identityFilter] = [nextPage, nextSearch, nextDistrict, nextIdentityFilter];
   try {
     await loadRegistrations();
     return true;
   } catch (error) {
     // A 401 has already logged out and cleared the conditions; restoring them would hand them to the next login.
-    if (session) [page, search, district] = previous;
+    if (session) [page, search, district, identityFilter] = previous;
     showMessage(error.message, true);
     return false;
   } finally {
@@ -1197,22 +1713,70 @@ async function showRegistrations(nextPage, nextSearch = search, nextDistrict = d
   }
 }
 const searchForm = document.querySelector("#search-form");
+const identityFilterBox = searchForm.querySelector(".identity-filter details");
+const identityBoxes = () => [...searchForm.querySelectorAll('[name="identity_filter"]')];
+// The ticked 身分別 codes; [] when every box or none is ticked, both of which search 全部身分.
+function enteredIdentityFilter() {
+  const boxes = identityBoxes();
+  const checked = boxes.filter((box) => box.checked);
+  return checked.length === boxes.length ? [] : checked.map((box) => box.value);
+}
+function setIdentityFilter(codes) {
+  for (const box of identityBoxes()) box.checked = !codes.length || codes.includes(box.value);
+  syncIdentityFilter();
+}
+// 全部身分 follows the boxes below it, and the closed box names what is ticked.
+function syncIdentityFilter() {
+  const boxes = identityBoxes();
+  const checked = boxes.filter((box) => box.checked);
+  const all = searchForm.elements.identity_all;
+  if (!all) return;
+  all.checked = checked.length === boxes.length;
+  all.indeterminate = checked.length > 0 && !all.checked;
+  const summary = searchForm.querySelector(".identity-filter summary");
+  summary.textContent = all.checked ? "全部身分"
+    : checked.length > 2 ? `已選 ${checked.length} 種身分`
+    : checked.length ? checked.map((box) => box.parentElement.textContent).join("、") : "未選身分";
+  // Two long names are cut off in the box; the tooltip names every pick.
+  summary.title = checked.map((box) => box.parentElement.textContent).join("、");
+}
 // Enabled while either the typed or the applied conditions are set, so a filter typed away but still on the list can be cleared.
 function updateClearSearch() {
-  document.querySelector("#clear-search").disabled = !search && !district
-    && !searchForm.elements.search.value.trim() && !searchForm.elements.district_id.value;
+  document.querySelector("#clear-search").disabled = !search && !district && !identityFilter.length
+    && !searchForm.elements.search.value.trim() && !searchForm.elements.district_id.value
+    && !enteredIdentityFilter().length;
 }
+// Registered before updateClearSearch, so it sees the boxes 全部身分 has just ticked or cleared.
+searchForm.addEventListener("input", (event) => {
+  if (event.target.name === "identity_all") for (const box of identityBoxes()) box.checked = event.target.checked;
+  if (["identity_all", "identity_filter"].includes(event.target.name)) syncIdentityFilter();
+});
 searchForm.addEventListener("input", updateClearSearch);
+document.addEventListener("click", (event) => {
+  if (identityFilterBox.open && !identityFilterBox.contains(event.target)) identityFilterBox.open = false;
+});
+// On the document: Safari leaves focus on the page when a checkbox is clicked.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !identityFilterBox.open) return;
+  identityFilterBox.open = false;
+  identityFilterBox.querySelector("summary").focus();
+});
 searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  showRegistrations(0, searchForm.elements.search.value.trim(), searchForm.elements.district_id.value);
+  identityFilterBox.open = false;
+  // Nothing ticked searches 全部身分, and the boxes say so.
+  const identities = enteredIdentityFilter();
+  setIdentityFilter(identities);
+  showRegistrations(0, searchForm.elements.search.value.trim(), searchForm.elements.district_id.value, identities);
 });
 document.querySelector("#clear-search").addEventListener("click", async () => {
-  const entered = [searchForm.elements.search.value, searchForm.elements.district_id.value];
+  const entered = [searchForm.elements.search.value, searchForm.elements.district_id.value, enteredIdentityFilter()];
   searchForm.reset();
+  syncIdentityFilter();
   // A failed load keeps the conditions from before the click, in the fields as well as on the list.
-  if (!await showRegistrations(0, "", "") && session) {
+  if (!await showRegistrations(0, "", "", []) && session) {
     [searchForm.elements.search.value, searchForm.elements.district_id.value] = entered;
+    setIdentityFilter(entered[2]);
     updateClearSearch();
   }
 });
@@ -1222,35 +1786,54 @@ document.querySelector("#download-csv").addEventListener("click", () =>
   downloadCsv().catch((error) => showMessage(error.message, true)));
 document.querySelector("#download-stats-csv").addEventListener("click", () =>
   downloadStatisticsCsv().catch((error) => showMessage(error.message, true)));
+let savingRegistration = false;
 document.querySelector("#edit-registration-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (savingRegistration) return;
   const form = event.currentTarget;
-  const data = new FormData(form);
-  const choices = choicesFromForm(form);
+  let fields;
+  try { fields = registrationFields(registrationParts.detail); } catch (error) { return showMessage(error.message, true); }
   // Saving applies the audience rule to sign-ups from before an activity was restricted.
   const reverted = Meals.revertedCount(document.querySelector("#detail-choices"));
   if (reverted && !confirm(`這筆登記有 ${reverted} 項限定活動不符報名對象，儲存後會改為不參加。確定儲存？`)) return;
+  savingRegistration = true;
+  const controls = [...form.querySelectorAll("input, select, textarea, button")].map((control) => [control, control.disabled]);
+  const registrationId = selectedRegistration.id;
+  const submit = form.querySelector('button[type="submit"]');
+  controls.forEach(([control]) => control.disabled = true);
+  submit.textContent = "儲存中…";
+  form.setAttribute("aria-busy", "true");
+  showMessage("儲存中…");
   try {
-    await api("save_registration", {
-      registration_id: selectedRegistration.id, full_name: data.get("full_name"),
-      district_id: Number(data.get("district_id")), choices,
-      hosting: Hosting.read(document.querySelector("#detail-hosting")),
-      pickup: Pickup.read(document.querySelector("#detail-pickup")),
-      meal_identity: Meals.readIdentity(document.querySelector("#detail-choices")),
-    });
-    await refreshRegistration();
-    // Back in view mode the save button is hidden; focus the way back into editing.
-    document.querySelector("#start-registration-edit").focus();
+    const result = await api("save_registration", { registration_id: registrationId, ...fields });
     showMessage("登記資料已儲存。");
-  } catch (error) { showMessage(error.message, true); }
+    try {
+      if (result.registration && selectedRegistration?.id === registrationId) openRegistration(result.registration);
+      await refreshRegistration(result.registration);
+      document.querySelector("#start-registration-edit").focus();
+    } catch (error) {
+      showMessage(`登記資料已儲存，但畫面未能重新整理：${error.message}`, true);
+    }
+  } catch (error) {
+    showMessage(error.message, true);
+  } finally {
+    savingRegistration = false;
+    form.removeAttribute("aria-busy");
+    submit.textContent = "儲存登記";
+    if (editingRegistration && selectedRegistration?.id === registrationId) controls.forEach(([control, disabled]) => control.disabled = disabled);
+  }
 });
 // Same form content keeps the same id, so a double submit or network retry cannot create a second record.
 let newRegistrationRequestId = crypto.randomUUID();
-document.querySelector("#new-registration-form").addEventListener("input", () => {
+document.querySelector("#new-registration-form").addEventListener("input", (event) => {
   newRegistrationRequestId = crypto.randomUUID();
+  syncChildFields(event.currentTarget);
   syncNewMeals();
 });
-document.querySelector("#edit-registration-form").addEventListener("input", syncDetailMeals);
+document.querySelector("#edit-registration-form").addEventListener("input", (event) => {
+  if (editingRegistration) syncChildFields(event.currentTarget);
+  syncDetailMeals();
+});
 // Each button hides itself, so focus moves to where the person continues instead of falling to the page.
 document.querySelector("#start-registration-edit").addEventListener("click", () => {
   openRegistration(selectedRegistration, true);
@@ -1266,15 +1849,9 @@ document.querySelector("#new-registration-form").addEventListener("submit", asyn
   const submit = form.querySelector('button[type="submit"]');
   if (submit.disabled) return;
   submit.disabled = true;
-  const data = new FormData(form);
   try {
     const result = await api("create_registration", {
-      create_request_id: newRegistrationRequestId,
-      full_name: data.get("full_name"), district_id: Number(data.get("district_id")),
-      choices: choicesFromForm(form),
-      hosting: Hosting.read(document.querySelector("#new-registration-hosting")),
-      pickup: Pickup.read(document.querySelector("#new-registration-pickup")),
-      meal_identity: Meals.readIdentity(document.querySelector("#new-registration-choices")),
+      create_request_id: newRegistrationRequestId, ...registrationFields(registrationParts.new),
     });
     newRegistrationRequestId = crypto.randomUUID();
     const notice = document.querySelector("#new-registration-code");
