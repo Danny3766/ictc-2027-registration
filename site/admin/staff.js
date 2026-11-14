@@ -1042,7 +1042,7 @@ function openRegistration(registration, editing = false) {
   renderDetailTitle(registration);
   const form = document.querySelector("#edit-registration-form");
   form.elements.full_name.value = registration.full_name;
-  Meals.renderIdentity(form.elements.meal_identity, registration.meal_identity ?? "general");
+  Meals.renderIdentity(form.elements.meal_identity, registration.meal_identity);
   form.elements.parent_name.value = registration.parent_name ?? "";
   const districts = form.elements.district_id;
   districts.replaceChildren(...reference.districts.map((district) =>
@@ -1241,15 +1241,16 @@ const identityPricesFrom = (form) => [...form.querySelectorAll("[data-identity-p
   .filter((input) => input.value !== "")
   .map((input) => ({ identity_code: input.dataset.identityPrice, fee_amount: Number(input.value) }));
 
-// 一般 and both 兒童 identities are reserved: keep them active and publicly selectable.
-const reservedIdentity = (code) => ["general", "child", "preschool"].includes(code);
+// Reserved identities stay active and publicly selectable.
+const reservedIdentity = (code) => ["general", "student", "child", "preschool"].includes(code);
 
 function renderStudentStatisticsIdentity() {
   const select = document.querySelector('#student-statistics-identity-form [name="code"]');
   const selected = reference.settings.student_statistics_identity_code ?? "";
   select.replaceChildren(new Option("未指定", ""));
   for (const identity of reference.identities ?? []) {
-    if ((identity.is_active && !reservedIdentity(identity.code)) || identity.code === selected) {
+    // Of the reserved identities only 學生 can be the 學生統計身分 (202611130001).
+    if ((identity.is_active && (identity.code === "student" || !reservedIdentity(identity.code))) || identity.code === selected) {
       select.add(new Option(`${identity.name}${identity.is_active ? "" : "（已停用）"}`, identity.code));
     }
   }
