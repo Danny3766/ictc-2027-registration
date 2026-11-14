@@ -642,8 +642,25 @@ test("editing an old registration leaves a newer activity unanswered", async ({ 
   await mockStaff(page, "staff", (payload) => { if (payload.action === "save_registration") saved = payload; }, "測試登記", twoActivities);
   await login(page);
   await page.getByRole("button", { name: "查看／處理" }).click();
-  await expect(page.locator("#detail-choices")).toContainText("（未回覆，可留空）");
+  // Viewing: the chosen 不參加 is a grey pill, the radio dots are only visually hidden (a screen reader
+  // still finds the checked one), the unanswered activity shows a 未回覆 tag.
+  const answered = page.locator('#detail-choices [data-activity="1"]');
+  const unanswered = page.locator('#detail-choices [data-activity="2"]');
+  const radioWidth = async () => (await answered.getByRole("radio").first().boundingBox()).width;
+  await expect(answered.locator("label").filter({ hasText: "不參加" })).toHaveCSS("background-color", "rgb(75, 85, 96)");
+  await expect(answered.locator("label").filter({ hasText: /^參加$/ })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(answered.getByRole("radio", { name: "不參加" })).toBeChecked();
+  expect(await radioWidth()).toBeLessThanOrEqual(1);
+  await expect(page.locator('#edit-registration-form input[name="full_name"]')).toHaveCSS("color", "rgb(36, 48, 43)");
+  await expect(unanswered.locator(".unanswered-tag")).toBeVisible();
+  await expect(unanswered.locator(".unanswered-hint")).toBeHidden();
+  await expect(unanswered.locator("label").first()).toBeHidden();
   await page.getByRole("button", { name: "修改登記資料" }).click();
+  // Editing restores the plain radios and the hint.
+  await expect(answered.locator("label").filter({ hasText: "不參加" })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  expect(await radioWidth()).toBeGreaterThan(1);
+  await expect(unanswered.locator(".unanswered-hint")).toHaveText("（未回覆，可留空）");
+  await expect(unanswered.locator(".unanswered-tag")).toBeHidden();
   await page.locator('#edit-registration-form input[name="full_name"]').fill("修改後姓名");
   await page.getByRole("button", { name: "儲存登記" }).click();
   await expect(page.locator("#message")).toHaveText("登記資料已儲存。");

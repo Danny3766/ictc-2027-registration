@@ -898,9 +898,13 @@ function renderChoiceFields(container, choices = new Map(), requireAll = true) {
     item.append(title);
     if (!requireAll && !choices.has(activity.id)) {
       const unanswered = document.createElement("span");
-      unanswered.className = "hint";
+      unanswered.className = "hint unanswered-hint";
       unanswered.textContent = "（未回覆，可留空）";
-      item.append(unanswered);
+      // Shown instead of the hint and both options while viewing (staff.css).
+      const tag = document.createElement("span");
+      tag.className = "unanswered-tag";
+      tag.textContent = "未回覆";
+      item.append(unanswered, tag);
     }
     for (const [value, label] of [["true", "參加"], ["false", "不參加"]]) {
       const option = document.createElement("label");
@@ -1049,6 +1053,7 @@ function openRegistration(registration, editing = false) {
   // Only active rows can be edited; a historical cancelled row can still be voided.
   const isActive = registration.record_status === "active";
   form.querySelectorAll("input, select, button").forEach((control) => control.disabled = !editingRegistration);
+  form.classList.toggle("viewing", !editingRegistration);
   document.querySelector("#start-registration-edit").hidden = !isActive || editingRegistration;
   document.querySelector("#registration-edit-buttons").hidden = !editingRegistration;
   // Rendered after the loop above, which would otherwise re-enable the hidden hosting fields.
