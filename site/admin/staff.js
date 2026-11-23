@@ -21,6 +21,8 @@ let visibleRegistrations = [];
 let selectedRegistration;
 let editingRegistration = false;
 let detailRequest = 0;
+let registrationRequest = null;
+let registrationLoading = false;
 // Must match the page size of list_registrations in the staff Edge Function.
 const REGISTRATIONS_PER_PAGE = 10;
 let editingStaff = null;
@@ -143,6 +145,7 @@ document.querySelector("#message-close").addEventListener("click", hideMessage);
 
 function clearSession() {
   detailRequest++;
+  registrationRequest = null;
   session = null;
   sessionStorage.removeItem(sessionKey);
   // The next person to sign in on this device starts at 登記名單.
@@ -168,6 +171,8 @@ function clearSession() {
   document.querySelector("#search-form").reset();
   syncIdentityFilter();
   [page, search, district, identityFilter, importStatus] = [0, "", "", [], ""];
+  count = 0;
+  setRegistrationLoading(false);
   document.querySelector("#clear-search").disabled = true;
   for (const selector of ["#registration-rows", "#staff-rows", "#stats-rows", "#district-stats-rows", "#district-activity-cards",
     "#hosting-status-stats-rows", "#hosting-capacity-stats-rows"]) {
@@ -205,7 +210,9 @@ async function accessToken() {
       // Only a rejected refresh token ends the login; a network error or Auth 5xx keeps it for a retry.
       if (![400, 401, 403].includes(error.status)) throw new Error("暫時無法連線，請稍後再試");
       clearSession();
-      throw new Error("登入已過期，請重新登入");
+      const expired = new Error("登入已過期，請重新登入");
+      expired.sessionExpired = true;
+      throw expired;
     }
   }
   return session.access_token;
@@ -213,17 +220,21 @@ async function accessToken() {
 
 async function api(action, values = {}) {
   if (!config?.supabaseUrl || !config?.publishableKey) throw new Error("網站尚未設定 Supabase 公開連線資訊");
+  const token = await accessToken();
+  const requestSession = session;
   const response = await fetch(`${config.supabaseUrl}/functions/v1/staff`, {
     method: "POST",
-    headers: { apikey: config.publishableKey, Authorization: `Bearer ${await accessToken()}`, "Content-Type": "application/json" },
+    headers: { apikey: config.publishableKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ action, ...values }),
   });
   const result = await response.json().catch(() => ({}));
-  if (response.status === 401) clearSession();
+  const sessionExpired = response.status === 401 && session === requestSession;
+  if (sessionExpired) clearSession();
   if (!response.ok) {
     const error = new Error(result.error || "後台暫時無法使用");
     error.status = response.status;
     error.code = result.code;
+    error.sessionExpired = sessionExpired;
     throw error;
   }
   return result;
@@ -580,39 +591,79 @@ async function saveReference(event, kind) {
   } catch (error) { showMessage(error.message, true); }
 }
 
-async function loadRegistrations(recount = true) {
-  const result = await api("list_registrations", { page, search, summary: true, ...(!recount && { skip_count: true }), ...(district && { district_id: Number(district) }),
-    ...(identityFilter.length && { meal_identities: identityFilter.map((code) => code || null) }), ...(importStatus && { import_status: importStatus }) });
-  count = result.count ?? count;
-  document.querySelector("#registration-count").textContent = `共 ${count} 筆`;
-  document.querySelector("#page-number").textContent = `第 ${page + 1} 頁`;
-  document.querySelector("#previous-page").disabled = page === 0;
-  document.querySelector("#next-page").disabled = (page + 1) * REGISTRATIONS_PER_PAGE >= count;
-  const rows = document.querySelector("#registration-rows");
-  rows.replaceChildren();
-  visibleRegistrations = result.registrations;
-  const districtNames = new Map(reference.districts.map((district) => [district.id, district.name]));
-  for (const registration of result.registrations) {
-    const row = document.createElement("tr");
-    cell(row, registration.serial_no);
-    const nameCell = cell(row, registration.full_name);
-    appendIdentityBadge(nameCell, registration);
-    cell(row, districtNames.get(registration.district_id));
-    statusCell(row, "record", registration.record_status);
-    statusCell(row, "import", registration.import_status);
-    cell(row, shortTime(registration.updated_at));
-    // Same-district active family matches are named directly in the list.
-    const family = cell(row, registration.is_child ? `家長：${registration.parent_name}` : "");
-    if (registration.children?.length) {
-      family.textContent = `兒童：${registration.children.map((child) => child.full_name).join("、")}`;
+function setRegistrationLoading(loading) {
+  registrationLoading = loading;
+  document.querySelector("#registration-table").setAttribute("aria-busy", String(loading));
+  document.querySelector("#registration-loading").hidden = !loading;
+  document.querySelector('#search-form button[type="submit"]').disabled = loading;
+  document.querySelector("#previous-page").disabled = loading || page === 0;
+  document.querySelector("#next-page").disabled = loading || (page + 1) * REGISTRATIONS_PER_PAGE >= count;
+  updateClearSearch();
+}
+
+async function loadRegistrations(recount = true, conditions = null, request = {}) {
+  const pending = registrationLoading ? registrationRequest : null;
+  conditions ??= pending?.conditions ?? [page, search, district, identityFilter, importStatus];
+  request.conditions = conditions;
+  // A refresh during a search must inherit both its conditions and its count request.
+  request.recount = recount || Boolean(pending?.recount);
+  registrationRequest = request;
+  const [nextPage, nextSearch, nextDistrict, nextIdentityFilter, nextImportStatus] = conditions;
+  setRegistrationLoading(true);
+  try {
+    const result = await api("list_registrations", { page: nextPage, search: nextSearch, summary: true, ...(!request.recount && { skip_count: true }), ...(nextDistrict && { district_id: Number(nextDistrict) }),
+      ...(nextIdentityFilter.length && { meal_identities: nextIdentityFilter.map((code) => code || null) }), ...(nextImportStatus && { import_status: nextImportStatus }) });
+    if (request !== registrationRequest || !session) return false;
+    [page, search, district, identityFilter, importStatus] = conditions;
+    count = result.count ?? count;
+    document.querySelector("#registration-count").textContent = `共 ${count} 筆`;
+    document.querySelector("#page-number").textContent = `第 ${page + 1} 頁`;
+    const rows = document.querySelector("#registration-rows");
+    rows.replaceChildren();
+    visibleRegistrations = result.registrations;
+    const districtNames = new Map(reference.districts.map((district) => [district.id, district.name]));
+    for (const registration of result.registrations) {
+      const row = document.createElement("tr");
+      cell(row, registration.serial_no);
+      const nameCell = cell(row, registration.full_name);
+      appendIdentityBadge(nameCell, registration);
+      cell(row, districtNames.get(registration.district_id));
+      statusCell(row, "record", registration.record_status);
+      statusCell(row, "import", registration.import_status);
+      cell(row, shortTime(registration.updated_at));
+      // Same-district active family matches are named directly in the list.
+      const family = cell(row, registration.is_child ? `家長：${registration.parent_name}` : "");
+      if (registration.children?.length) {
+        family.textContent = `兒童：${registration.children.map((child) => child.full_name).join("、")}`;
+      }
+      const actions = cell(row, "");
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.textContent = "查看／處理";
+      edit.addEventListener("click", async () => {
+        if (edit.getAttribute("aria-disabled") === "true") return;
+        const text = edit.textContent;
+        edit.setAttribute("aria-disabled", "true");
+        edit.setAttribute("aria-busy", "true");
+        edit.textContent = text + "（載入中）";
+        try { await loadRegistrationDetail(registration); }
+        catch (error) { showMessage(error.message, true); }
+        finally {
+          edit.removeAttribute("aria-disabled");
+          edit.removeAttribute("aria-busy");
+          edit.textContent = text;
+        }
+      });
+      actions.append(edit);
+      rows.append(row);
     }
-    const actions = cell(row, "");
-    const edit = document.createElement("button");
-    edit.type = "button";
-    edit.textContent = "查看／處理";
-    edit.addEventListener("click", () => loadRegistrationDetail(registration).catch((error) => showMessage(error.message, true)));
-    actions.append(edit);
-    rows.append(row);
+    return true;
+  } catch (error) {
+    // A current 401 clears the session and invalidates the request, but still needs its expiry message.
+    if (request !== registrationRequest && !error.sessionExpired) return false;
+    throw error;
+  } finally {
+    if (request === registrationRequest) setRegistrationLoading(false);
   }
 }
 
@@ -1140,7 +1191,7 @@ async function loadRegistrationDetail(registration) {
 
 // After a save the caller already shows the saved record, and only a filter can change the count.
 async function refreshRegistration(saved) {
-  await loadRegistrations(!saved || Boolean(search || district || identityFilter.length || importStatus));
+  if (!await loadRegistrations(!saved || Boolean(search || district || identityFilter.length || importStatus))) return;
   const updated = visibleRegistrations.find((item) => item.id === selectedRegistration?.id);
   if (!updated) document.querySelector("#registration-detail").hidden = true;
   else if (!saved) await loadRegistrationDetail(updated);
@@ -1198,6 +1249,7 @@ async function toggleStaff(person) {
 async function openStaff() {
   const result = await api("me", { include_reference: true });
   profile = result.profile;
+  const openingProfile = profile;
   loginPanel.hidden = true;
   showChangePassword(profile.must_change_password);
   staffPanel.hidden = profile.must_change_password;
@@ -1214,7 +1266,9 @@ async function openStaff() {
     if (isAdmin) renderReference();
     else renderNewRegistrationForm();
     await Promise.all([loadRegistrations(), ...(isAdmin ? [loadStaff()] : [])]);
+    if (profile !== openingProfile) return;
   } catch (error) {
+    if (profile !== openingProfile && !error.sessionExpired) return;
     // Admin views stay hidden when loading fails; a kept admin view would leave the page blank.
     showView("section-registrations");
     throw error;
@@ -1715,20 +1769,13 @@ document.querySelector("#close-staff-editor").addEventListener("click", () => {
   editingStaff = null;
 });
 
-// A failed load keeps the previous page and conditions, so the controls match the rows on screen.
-async function showRegistrations(nextPage, nextSearch = search, nextDistrict = district, nextIdentityFilter = identityFilter, nextImportStatus = importStatus) {
-  const previous = [page, search, district, identityFilter, importStatus];
-  [page, search, district, identityFilter, importStatus] = [nextPage, nextSearch, nextDistrict, nextIdentityFilter, nextImportStatus];
+// Conditions change only with the latest successful response, so a failure keeps the displayed list coherent.
+async function showRegistrations(nextPage, nextSearch = search, nextDistrict = district, nextIdentityFilter = identityFilter, nextImportStatus = importStatus, request = {}) {
   try {
-    await loadRegistrations();
-    return true;
+    return await loadRegistrations(true, [nextPage, nextSearch, nextDistrict, nextIdentityFilter, nextImportStatus], request);
   } catch (error) {
-    // A 401 has already logged out and cleared the conditions; restoring them would hand them to the next login.
-    if (session) [page, search, district, identityFilter, importStatus] = previous;
-    showMessage(error.message, true);
+    if (request === registrationRequest || error.sessionExpired) showMessage(error.message, true);
     return false;
-  } finally {
-    updateClearSearch();
   }
 }
 const searchForm = document.querySelector("#search-form");
@@ -1761,9 +1808,9 @@ function syncIdentityFilter() {
 }
 // Enabled while either the typed or the applied conditions are set, so a filter typed away but still on the list can be cleared.
 function updateClearSearch() {
-  document.querySelector("#clear-search").disabled = !search && !district && !identityFilter.length && !importStatus
+  document.querySelector("#clear-search").disabled = registrationLoading || (!search && !district && !identityFilter.length && !importStatus
     && !searchForm.elements.search.value.trim() && !searchForm.elements.district_id.value
-    && !enteredIdentityFilter().length && !searchForm.elements.import_status.value;
+    && !enteredIdentityFilter().length && !searchForm.elements.import_status.value);
 }
 // Registered before updateClearSearch, so it sees the boxes 全部身分 has just ticked or cleared.
 searchForm.addEventListener("input", (event) => {
@@ -1793,7 +1840,8 @@ document.querySelector("#clear-search").addEventListener("click", async () => {
   searchForm.reset();
   syncIdentityFilter();
   // A failed load keeps the conditions from before the click, in the fields as well as on the list.
-  if (!await showRegistrations(0, "", "", [], "") && session) {
+  const request = {};
+  if (!await showRegistrations(0, "", "", [], "", request) && session && request === registrationRequest) {
     [searchForm.elements.search.value, searchForm.elements.district_id.value] = entered;
     setIdentityFilter(entered[2]);
     searchForm.elements.import_status.value = entered[3];

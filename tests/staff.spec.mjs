@@ -2,6 +2,21 @@ import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { statisticsFixture } from "./statistics-fixture.mjs";
 
+async function settle(page) {
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+}
+
+async function holdListRequests(page, onRequest) {
+  await page.route("**/functions/v1/staff", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.action === "list_registrations") {
+      onRequest(route, body);
+      return;
+    }
+    await route.fallback();
+  });
+}
+
 // The Edge Function sends the identities and each activity's identity prices; fixtures written
 // before them get the defaults (an activity's student price becomes its student identity price).
 function migrateReference(data) {
@@ -184,7 +199,7 @@ test("a slower earlier detail load cannot replace or fail the record opened afte
   const stale = page.waitForResponse((response) => response.request().postDataJSON()?.registration_id === people[0].id);
   await slow.fulfill({ status: 404, json: { error: "找不到登記紀錄" } });
   await stale;
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await settle(page);
   await expect(page.locator("#detail-title")).toContainText("乙");
   await expect(page.locator("#message")).not.toHaveText("找不到登記紀錄");
 });
@@ -2156,6 +2171,7 @@ test("the 身分別 checklist filters by several identities and 未填身分, wi
   const boxes = form.locator('[name="identity_filter"]');
   const unfiltered = { action: "list_registrations", summary: true, page: 0, search: "" };
   // 身分別 sits after 區, level with the boxes, on a wide screen.
+  await expect(summary).toBeVisible();
   await expect(summary).toHaveText("全部身分");
   if (page.viewportSize().width > 700) {
     const [district, box] = await Promise.all([form.locator('select[name="district_id"]').boundingBox(), summary.boundingBox()]);
@@ -2674,4 +2690,351 @@ test("staff survey fields preserve native validation without a fixed aria-invali
   await expect(surveys).toHaveCount(8);
   await expect(surveys.locator('xpath=self::*[@aria-invalid]')).toHaveCount(0);
   expect(await surveys.first().evaluate((control) => control.required && !control.validity.valid)).toBe(true);
+});
+
+const loadingList = (name, count = 21) => ({ count, registrations: [{
+  id: "223e4567-e89b-42d3-a456-426614174000", serial_no: 1, full_name: name, district_id: 1,
+  record_status: "active", import_status: "pending", meal_identity: "general", registration_choices: [], children: [],
+  updated_at: "2026-11-04T00:00:00Z",
+}] });
+
+test("a rejected token refresh during list loading restores controls and reports expiry", async ({ page }) => {
+  await mockStaff(page, "staff", () => {}, "original");
+  await login(page);
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  await page.route("**/auth/v1/token?grant_type=refresh_token", (route) => route.fulfill({ status: 400, json: {} }));
+  await page.evaluate(() => { session.expires_at = Date.now(); });
+  await page.locator('#search-form [name="search"]').fill("expired");
+  await page.locator('#search-form button[type="submit"]').click();
+  await expect(page.locator("#login-panel")).toBeVisible();
+  await expect(page.locator("#message")).toHaveText("登入已過期，請重新登入");
+  await expect(page.locator("#registration-loading")).toBeHidden();
+  await expect(page.locator("#registration-table")).toHaveAttribute("aria-busy", "false");
+});
+
+test("list loading disables actions and preserves displayed rows until the response arrives", async ({ page }) => {
+  await mockStaff(page, "staff", () => {}, "original", {
+    list_registrations: () => ({ json: loadingList("original") }),
+  });
+  await login(page);
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  const tableTop = () => page.locator("#registration-table").evaluate((table) => table.getBoundingClientRect().top + window.scrollY);
+  const topBeforeLoading = await tableTop();
+  let pending;
+  await holdListRequests(page, (route) => { pending = route; });
+  await page.locator('#search-form [name="search"]').fill("found");
+  await page.locator('#search-form button[type="submit"]').click();
+  await expect.poll(() => Boolean(pending)).toBe(true);
+  await expect(page.locator("#registration-table")).toHaveAttribute("aria-busy", "true");
+  await expect(page.locator("#registration-loading")).toBeVisible();
+  expect(Math.abs(await tableTop() - topBeforeLoading)).toBeLessThan(1);
+  await expect(page.locator("#registration-loading")).not.toHaveAttribute("value");
+  for (const selector of ['#search-form button[type="submit"]', "#clear-search", "#previous-page", "#next-page"]) {
+    await expect(page.locator(selector)).toBeDisabled();
+  }
+  await page.locator('#search-form [name="search"]').fill("typed while loading");
+  await expect(page.locator("#clear-search")).toBeDisabled();
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  await pending.fulfill({ json: loadingList("found") });
+  await expect(page.locator("#registration-rows")).toContainText("found");
+  await expect(page.locator("#registration-table")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator("#registration-loading")).toBeHidden();
+  expect(Math.abs(await tableTop() - topBeforeLoading)).toBeLessThan(1);
+  await expect(page.locator('#search-form button[type="submit"]')).toBeEnabled();
+  await expect(page.locator("#clear-search")).toBeEnabled();
+  await expect(page.locator("#previous-page")).toBeDisabled();
+  await expect(page.locator("#next-page")).toBeEnabled();
+});
+
+for (const status of [200, 503]) {
+  for (const order of ["old-first", "new-first"]) {
+    test(`list request ordering ignores stale ${status} responses: ${order}`, async ({ page }) => {
+      await mockStaff(page, "staff", () => {}, "original", {
+        list_registrations: () => ({ json: loadingList("original") }),
+      });
+      await login(page);
+      await expect(page.locator("#registration-rows")).toContainText("original");
+      const pending = {};
+      await holdListRequests(page, (route, body) => { pending[body.search] = route; });
+      // Internal refreshes can overlap even though the visible search and paging buttons are disabled.
+      await page.evaluate(() => { void showRegistrations(0, "old"); });
+      await expect.poll(() => Boolean(pending.old)).toBe(true);
+      await page.evaluate(() => { void showRegistrations(1, "new"); });
+      await expect.poll(() => Boolean(pending.new)).toBe(true);
+      const finishOld = async () => {
+        const response = page.waitForResponse((reply) => reply.request().postDataJSON()?.search === "old");
+        await pending.old.fulfill({ status, json: status === 200 ? loadingList("obsolete", 99) : { error: "obsolete failure" } });
+        await response;
+        await settle(page);
+      };
+      if (order === "old-first") {
+        await finishOld();
+        await expect(page.locator("#registration-table")).toHaveAttribute("aria-busy", "true");
+        await expect(page.locator("#registration-rows")).toContainText("original");
+      }
+      await pending.new.fulfill({ json: loadingList("latest") });
+      await expect(page.locator("#registration-rows")).toContainText("latest");
+      if (order === "new-first") await finishOld();
+      await expect(page.locator("#registration-count")).toContainText("21");
+      await expect(page.locator("#page-number")).toContainText("2");
+      await expect(page.locator("#registration-table")).toHaveAttribute("aria-busy", "false");
+      await expect(page.locator("#previous-page")).toBeEnabled();
+      await expect(page.locator("#message")).not.toHaveText("obsolete failure");
+      // Paging must use the accepted search rather than the stale request's conditions.
+      await page.locator("#next-page").click();
+      await expect.poll(() => pending.new.request().postDataJSON().page).toBe(2);
+      await pending.new.fulfill({ json: loadingList("page three") });
+      await expect(page.locator("#registration-rows")).toContainText("page three");
+    });
+  }
+}
+
+test("a failed latest search keeps the last displayed conditions after an older request completes", async ({ page }) => {
+  await mockStaff(page, "staff", () => {}, "original", {
+    list_registrations: () => ({ json: loadingList("original") }),
+  });
+  await login(page);
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  let older;
+  await page.route("**/functions/v1/staff", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.action !== "list_registrations") return route.fallback();
+    if (body.search === "old") { older = route; return; }
+    if (body.search === "new") return route.fulfill({ status: 503, json: { error: "latest failure" } });
+    await route.fallback();
+  });
+  await page.evaluate(() => { void showRegistrations(1, "old"); });
+  await expect.poll(() => Boolean(older)).toBe(true);
+  await page.evaluate(() => showRegistrations(2, "new"));
+  await expect(page.locator("#message")).toHaveText("latest failure");
+  const response = page.waitForResponse((reply) => reply.request().postDataJSON()?.search === "old");
+  await older.fulfill({ json: loadingList("obsolete", 99) });
+  await response;
+  await settle(page);
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  await expect(page.locator("#page-number")).toContainText("1");
+  await expect(page.locator("#previous-page")).toBeDisabled();
+  const next = page.waitForRequest((request) => request.postDataJSON()?.action === "list_registrations");
+  await page.locator("#next-page").click();
+  expect((await next).postDataJSON()).toMatchObject({ page: 1, search: "" });
+});
+
+for (const status of [200, 401, 503]) {
+  test(`a list response from the previous login cannot affect a new login: ${status}`, async ({ page }) => {
+    await mockStaff(page, "staff", () => {}, "original");
+    await login(page);
+    await expect(page.locator("#registration-rows")).toContainText("original");
+    let older;
+    await page.route("**/functions/v1/staff", async (route) => {
+      const body = route.request().postDataJSON();
+      if (body.action === "list_registrations" && body.search === "old") { older = route; return; }
+      await route.fallback();
+    });
+    await page.evaluate(() => { void showRegistrations(0, "old"); });
+    await expect.poll(() => Boolean(older)).toBe(true);
+    await page.locator("#logout-button").click();
+    await expect(page.locator("#login-panel")).toBeVisible();
+    await page.locator('#login-form [name="username"]').fill("tester");
+    await page.locator('#login-form [name="password"]').fill("test-password");
+    await page.locator('#login-form button[type="submit"]').click();
+    await expect(page.locator("#registration-rows")).toContainText("original");
+    const response = page.waitForResponse((reply) => reply.request().postDataJSON()?.search === "old");
+    await older.fulfill({ status, json: status === 200 ? loadingList("obsolete", 99) : { error: "obsolete login failure" } });
+    await response;
+    await settle(page);
+    await expect(page.locator("#staff-panel")).toBeVisible();
+    await expect(page.locator("#registration-rows")).toContainText("original");
+    await expect(page.locator("#registration-count")).not.toContainText("99");
+    await expect(page.locator("#message")).not.toHaveText("obsolete login failure");
+    await expect(page.locator("#registration-table")).toHaveAttribute("aria-busy", "false");
+  });
+}
+
+for (const status of [200, 503]) {
+  test(`detail loading preserves focus and prevents duplicate activation until ${status}`, async ({ page }) => {
+    const data = loadingList("original");
+    await mockStaff(page, "staff", () => {}, "original", { list_registrations: () => ({ json: data }) });
+    await login(page);
+    const button = page.locator("#registration-rows button").first();
+    await expect(button).toBeVisible();
+    let pending;
+    let requests = 0;
+    await page.route("**/functions/v1/staff", async (route) => {
+      if (route.request().postDataJSON().action === "get_registration") { requests++; pending = route; return; }
+      await route.fallback();
+    });
+    const text = await button.textContent();
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => Boolean(pending)).toBe(true);
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveAttribute("aria-disabled", "true");
+    await expect(button).toHaveJSProperty("disabled", false);
+    await expect(button).toBeFocused();
+    await expect(button).toHaveAttribute("aria-busy", "true");
+    await page.keyboard.press("Enter");
+    await button.dispatchEvent("click");
+    await settle(page);
+    expect(requests).toBe(1);
+    await pending.fulfill({ status, json: status === 200 ? { registration: data.registrations[0] } : { error: "detail failure" } });
+    await expect(button).toBeEnabled();
+    await expect(button).not.toHaveAttribute("aria-disabled");
+    await expect(button).toBeFocused();
+    await expect(button).toHaveText(text);
+    await expect(button).not.toHaveAttribute("aria-busy");
+    if (status === 200) await expect(page.locator("#registration-detail")).toBeVisible();
+    else await expect(page.locator("#message")).toHaveText("detail failure");
+  });
+}
+
+test("a superseded initial list cannot restore the previous login's admin sections", async ({ page }) => {
+  let role = "admin";
+  await mockStaff(page, "admin", () => {}, "original", {
+    me: () => ({ json: { profile: {
+      auth_user_id: "123e4567-e89b-42d3-a456-426614174000", display_name: "test", role, must_change_password: false,
+    } } }),
+  });
+  let older;
+  await page.route("**/functions/v1/staff", async (route) => {
+    if (route.request().postDataJSON().action === "list_registrations" && !older) { older = route; return; }
+    await route.fallback();
+  });
+  await login(page);
+  await expect.poll(() => Boolean(older)).toBe(true);
+  await page.locator("#logout-button").click();
+  await expect(page.locator("#login-panel")).toBeVisible();
+  role = "staff";
+  await page.locator('#login-form [name="username"]').fill("tester");
+  await page.locator('#login-form [name="password"]').fill("test-password");
+  await page.locator('#login-form button[type="submit"]').click();
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  const adminLink = page.locator('.staff-nav [href="#admin-accounts"]');
+  await expect(adminLink).toBeHidden();
+  const response = page.waitForResponse((reply) => reply.request() === older.request());
+  await older.fulfill({ json: loadingList("obsolete") });
+  await response;
+  await settle(page);
+  await expect(adminLink).toBeHidden();
+  await expect(page.locator("#registration-rows")).toContainText("original");
+});
+
+for (const action of ["save_registration", "set_import_status", "void_registration"]) {
+  test(`a pending search survives ${action} and its refresh recounts the filtered list`, async ({ page }) => {
+    const data = loadingList("original", 41);
+    const person = data.registrations[0];
+    person.registration_choices = [{ activity_id: 1, attending: false }];
+    await mockStaff(page, "staff", () => {}, "original", {
+      list_registrations: () => ({ json: data }),
+      get_registration: () => ({ json: { registration: person } }),
+      save_registration: () => ({ json: { success: true, registration: person } }),
+      set_import_status: () => ({ json: { success: true } }),
+      void_registration: () => ({ json: { success: true } }),
+    });
+    await login(page);
+    await page.locator("#registration-rows button").first().click();
+    await expect(page.locator("#registration-detail")).toBeVisible();
+    if (action === "save_registration") await page.locator("#start-registration-edit").click();
+    const pending = [];
+    await holdListRequests(page, (route) => { pending.push(route); });
+    await page.locator('#search-form [name="search"]').fill("needle");
+    await page.locator('#search-form button[type="submit"]').click();
+    await expect.poll(() => pending.length).toBe(1);
+    if (action === "save_registration") {
+      await page.locator('#edit-registration-form button[type="submit"]').click();
+    } else if (action === "set_import_status") {
+      await page.locator('#import-form [name="status"]').selectOption("imported");
+      await page.locator('#import-form button[type="submit"]').click();
+    } else {
+      await page.locator('#void-form [name="reason"]').fill("test");
+      page.once("dialog", (dialog) => dialog.accept());
+      await page.locator('#void-form button[type="submit"]').click();
+    }
+    await expect.poll(() => pending.length).toBe(2);
+    expect(pending[1].request().postDataJSON()).toMatchObject({ page: 0, search: "needle", summary: true });
+    expect(pending[1].request().postDataJSON().skip_count).toBeUndefined();
+    const filtered = loadingList("filtered", 3);
+    if (action === "void_registration") filtered.registrations[0].id = "323e4567-e89b-42d3-a456-426614174000";
+    await pending[1].fulfill({ json: filtered });
+    await expect(page.locator("#registration-rows")).toContainText("filtered");
+    const response = page.waitForResponse((reply) => reply.request() === pending[0].request());
+    await pending[0].fulfill({ json: loadingList("obsolete", 99) });
+    await response;
+    await settle(page);
+    await expect(page.locator('#search-form [name="search"]')).toHaveValue("needle");
+    await expect(page.locator("#registration-rows")).toContainText("filtered");
+    await expect(page.locator("#registration-count")).toContainText("3");
+    await expect(page.locator("#registration-count")).not.toContainText("99");
+    await expect(page.locator("#next-page")).toBeDisabled();
+  });
+}
+
+test("a failed inherited refresh drops pending conditions and the next refresh uses the displayed filters", async ({ page }) => {
+  await mockStaff(page, "staff", () => {}, "original", { list_registrations: () => ({ json: loadingList("original", 41) }) });
+  await login(page);
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  const pending = [];
+  await holdListRequests(page, (route) => { pending.push(route); });
+  await page.evaluate(() => { void showRegistrations(1, "needle"); });
+  await expect.poll(() => pending.length).toBe(1);
+  const refreshing = page.evaluate(() => loadRegistrations(false).catch(() => false));
+  await expect.poll(() => pending.length).toBe(2);
+  expect(pending[1].request().postDataJSON()).toMatchObject({ page: 1, search: "needle" });
+  expect(pending[1].request().postDataJSON().skip_count).toBeUndefined();
+  await pending[1].fulfill({ status: 503, json: { error: "refresh failure" } });
+  expect(await refreshing).toBe(false);
+  const retrying = page.evaluate(() => loadRegistrations(false));
+  await expect.poll(() => pending.length).toBe(3);
+  expect(pending[2].request().postDataJSON()).toMatchObject({ page: 0, search: "", skip_count: true });
+  await pending[2].fulfill({ json: loadingList("original", 41) });
+  expect(await retrying).toBe(true);
+  const response = page.waitForResponse((reply) => reply.request() === pending[0].request());
+  await pending[0].fulfill({ json: loadingList("obsolete", 99) });
+  await response;
+  await settle(page);
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  await expect(page.locator("#registration-count")).toContainText("41");
+  await expect(page.locator("#page-number")).toContainText("1");
+});
+
+test("an initial list superseded within the same login still enables admin sections", async ({ page }) => {
+  await mockStaff(page, "admin", () => {}, "original");
+  let initial;
+  await page.route("**/functions/v1/staff", async (route) => {
+    if (route.request().postDataJSON().action === "list_registrations" && !initial) { initial = route; return; }
+    await route.fallback();
+  });
+  await login(page);
+  await expect.poll(() => Boolean(initial)).toBe(true);
+  await page.evaluate(() => loadRegistrations());
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  const response = page.waitForResponse((reply) => reply.request() === initial.request());
+  await initial.fulfill({ json: loadingList("obsolete") });
+  await response;
+  await expect(page.locator('.staff-nav [href="#admin-accounts"]')).toBeVisible();
+  await expect(page.locator("#registration-rows")).toContainText("original");
+});
+
+test("a stale clear-search failure cannot restore fields over a newer search", async ({ page }) => {
+  await mockStaff(page, "staff", () => {}, "original");
+  await login(page);
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  await page.locator('#search-form [name="search"]').fill("before clear");
+  let clearing;
+  await page.route("**/functions/v1/staff", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.action === "list_registrations" && body.search === "") { clearing = route; return; }
+    if (body.action === "list_registrations" && body.search === "new") return route.fulfill({ json: loadingList("latest", 3) });
+    await route.fallback();
+  });
+  await page.locator("#clear-search").click();
+  await expect.poll(() => Boolean(clearing)).toBe(true);
+  await page.locator('#search-form [name="search"]').fill("new");
+  await page.evaluate(() => showRegistrations(0, "new"));
+  const response = page.waitForResponse((reply) => reply.request() === clearing.request());
+  await clearing.fulfill({ status: 503, json: { error: "stale clear failure" } });
+  await response;
+  await settle(page);
+  await expect(page.locator('#search-form [name="search"]')).toHaveValue("new");
+  await expect(page.locator("#registration-rows")).toContainText("latest");
+  await expect(page.locator("#message")).not.toHaveText("stale clear failure");
 });

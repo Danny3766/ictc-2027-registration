@@ -67,7 +67,7 @@
             <button type="submit">搜尋</button>
             <button id="clear-search" type="button" class="secondary" disabled>清除條件</button>
           </form>
-          <p id="registration-count"></p>
+          <p class="registration-summary"><span id="registration-count"></span><progress id="registration-loading" aria-label="正在載入登記名單" hidden></progress></p>
           <p class="hint family-hint"><strong>親子：</strong>兒童顯示登記時填寫的家長姓名；家長顯示同區有效登記中對應的兒童姓名。</p>
           <div class="table-scroll"><table id="registration-table"><thead><tr><th>流水號</th><th>姓名</th><th>區</th><th>狀態</th><th>匯入大會</th><th>更新時間</th><th>親子</th><th>操作</th></tr></thead><tbody id="registration-rows"></tbody></table></div>
           <div class="staff-actions pager"><button id="previous-page" type="button" class="secondary">上一頁</button><span id="page-number"></span><button id="next-page" type="button" class="secondary">下一頁</button></div>
