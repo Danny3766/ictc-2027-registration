@@ -1681,3 +1681,27 @@ test("selected tabs keep a shape indicator in forced colors", async ({ page }) =
   expect(await selected.evaluate((tab) => getComputedStyle(tab, "::after").content)).toBe("none");
 
 });
+
+test("public GET omits preflight-triggering headers while POST keeps its JSON headers", async ({ page }) => {
+  const requests = [];
+  await page.route("**/functions/v1/registration", async (route) => {
+    const request = route.request();
+    requests.push({ method: request.method(), headers: await request.allHeaders(),
+      body: request.method() === "POST" ? request.postDataJSON() : null });
+    await route.fulfill({ json: request.method() === "GET" ? openPage() : queried(true) });
+  });
+  await page.goto("/");
+  await expect(page.locator("#activities input")).toHaveCount(2);
+  expect(requests).toHaveLength(1);
+  expect(requests[0].method).toBe("GET");
+  expect(requests[0].headers).not.toHaveProperty("apikey");
+  expect(requests[0].headers).not.toHaveProperty("content-type");
+  expect(requests[0].headers).not.toHaveProperty("authorization");
+  await query(page);
+  await expect(page.locator("#start-edit")).toBeVisible();
+  expect(requests).toHaveLength(2);
+  expect(requests[1].method).toBe("POST");
+  expect(requests[1].headers.apikey).toBeTruthy();
+  expect(requests[1].headers["content-type"]).toBe("application/json");
+  expect(requests[1].body.action).toBe("query");
+});

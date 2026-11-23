@@ -137,7 +137,7 @@ async function api(body) {
   if (!config?.supabaseUrl || !config?.publishableKey) throw new Error("網站尚未設定 Supabase 公開連線資訊");
   const response = await fetch(`${config.supabaseUrl}/functions/v1/registration`, {
     method: body ? "POST" : "GET",
-    headers: { apikey: config.publishableKey, "Content-Type": "application/json" },
+    headers: body ? { apikey: config.publishableKey, "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   const result = await response.json().catch(() => ({}));
