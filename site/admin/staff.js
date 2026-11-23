@@ -68,6 +68,8 @@ const labels = {
   category: { meeting: "聚會", meal: "用餐", other: "其他" },
 };
 const label = (group, value) => labels[group][value] ?? value;
+// Scrolling animates only when the system does not ask for reduced motion.
+const scrollBehavior = () => matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 
 // registration_id is the hosting table's primary key, so the API embeds the one row as an object.
 const hostingOf = (registration) => registration.registration_hosting?.answer_valid === false ? null : Hosting.normalize(registration.registration_hosting);
@@ -191,10 +193,11 @@ function clearSession() {
   visibleRegistrations = [];
 }
 
+// A logout or another login meanwhile makes an answer, or its network failure, belong to no one.
+const staleError = () => Object.assign(new Error("登入狀態已變更"), { stale: true });
+
 async function authRequest(path, body) {
   const generation = loginGeneration;
-  // A logout or another login meanwhile makes this answer, or its network failure, belong to no one.
-  const stale = () => Object.assign(new Error("登入狀態已變更"), { stale: true });
   let response;
   try {
     response = await fetch(`${config.supabaseUrl}/auth/v1/${path}`, {
@@ -203,10 +206,10 @@ async function authRequest(path, body) {
       body: JSON.stringify(body),
     });
   } catch (error) {
-    throw generation === loginGeneration ? error : stale();
+    throw generation === loginGeneration ? error : staleError();
   }
   const result = await response.json().catch(() => ({}));
-  if (generation !== loginGeneration) throw stale();
+  if (generation !== loginGeneration) throw staleError();
   if (!response.ok) {
     const error = new Error(response.status < 500 ? "登入失敗，請確認帳號與密碼" : "登入服務暫時無法使用，請稍後再試");
     error.status = response.status;
@@ -232,7 +235,7 @@ async function refreshSession() {
 
 async function accessToken() {
   // Without a session the request outlived its login; there is no one on screen to tell.
-  if (!session) throw Object.assign(new Error("請先登入"), { stale: true });
+  if (!session) throw staleError();
   if (Date.now() >= session.expires_at - 60_000) {
     // Requests share one refresh: a second would send the refresh token the first may already have rotated.
     if (!refreshing) {
@@ -275,19 +278,17 @@ async function api(action, values = {}, signal) {
       signal,
     });
   } catch (error) {
-    if (generation !== loginGeneration) error.stale = true;
-    throw error;
+    throw generation === loginGeneration ? error : staleError();
   }
   const result = await response.json().catch(() => ({}));
-  const stale = generation !== loginGeneration;
-  const sessionExpired = response.status === 401 && !stale;
-  if (sessionExpired) clearSession();
+  // Any answer, a success included, that arrives after a logout or another login belongs to no one on screen.
+  if (generation !== loginGeneration) throw staleError();
   if (!response.ok) {
     const error = new Error(result.error || "後台暫時無法使用");
     error.status = response.status;
     error.code = result.code;
-    error.sessionExpired = sessionExpired;
-    error.stale = stale;
+    error.sessionExpired = response.status === 401;
+    if (error.sessionExpired) clearSession();
     throw error;
   }
   return result;
@@ -450,7 +451,7 @@ function fillForm(form, values, scroll = true) {
     if (field.type === "checkbox") field.checked = Boolean(value);
     else field.value = value ?? "";
   }
-  if (scroll) form.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  if (scroll) form.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
 }
 
 // The edited row's id lives only here, so abandoning an edit (取消編輯) can never update that row.
@@ -626,12 +627,8 @@ async function saveReference(event, kind) {
   if (edited && data.audience !== "all" && data.audience !== edited.audience) {
     // People who signed up before the restriction keep their answer until their next save.
     let outside;
-    const generation = loginGeneration;
     try {
-      const registrations = await allRegistrations();
-      // After a logout the count and its question belong to no one on screen.
-      if (generation !== loginGeneration) return;
-      outside = activeRegistrations(registrations).filter((registration) => attends(registration, edited)
+      outside = activeRegistrations(await allRegistrations()).filter((registration) => attends(registration, edited)
         && !Meals.eligible(data, { skipsHosting: !Meals.answersHosting(registration.meal_identity ?? "general"), skipsPickup: !Meals.answersHosting(registration.meal_identity ?? "general", "pickup"), hostingStatus: hostingOf(registration)?.status,
           pickupStatus: pickupOf(registration)?.status, choices: registration.registration_choices,
           activities: reference.activities })).length;
@@ -689,7 +686,7 @@ async function loadRegistrations(recount = true, conditions = null, request = {}
     while (true) {
       result = await api("list_registrations", { page: nextPage, search: nextSearch, summary: true, ...(!request.recount && { skip_count: true }), ...(nextDistrict && { district_id: Number(nextDistrict) }),
         ...(nextIdentityFilter.length && { meal_identities: nextIdentityFilter.map((code) => code || null) }), ...(nextImportStatus && { import_status: nextImportStatus }) }, controller.signal);
-      if (request !== registrationRequest || !session) {
+      if (request !== registrationRequest) {
         return succeeded = registrationRequest?.conditions === conditions ? await registrationRequest.done : false;
       }
       if (result.registrations.length) break;
@@ -825,11 +822,8 @@ function summarizeStatistics(data, activities) {
   return { total, districts };
 }
 
-// Returns false when a logout or another login came first, so nothing from the old login is shown or saved.
 async function showStatistics() {
-  const generation = loginGeneration;
   const { statistics } = await api("registration_statistics");
-  if (generation !== loginGeneration) return false;
   const activities = currentActivities();
   const { total: overall, districts } = summarizeStatistics(statistics, activities);
   const hasStudentIdentity = Boolean(reference.settings.student_statistics_identity_code);
@@ -895,7 +889,6 @@ async function showStatistics() {
   cell(districtSum, amountText(overall.fee)); districtRows.append(districtSum);
   document.querySelector("#district-activity-cards").replaceChildren(...districtCards);
   showHostingStatistics(statistics, overall.count);
-  return true;
 }
 
 function totalRow(rows, values) {
@@ -995,7 +988,7 @@ function appendStatisticsTable(rows, title, table, note = "") {
 }
 
 async function downloadStatisticsCsv() {
-  if (!await showStatistics()) return;
+  await showStatistics();
   const rows = [["統計摘要"], [document.querySelector("#stats-summary").textContent], []];
   if (!document.querySelector("#student-statistics-hint").hidden) {
     rows.push([document.querySelector("#student-statistics-hint").textContent], []);
@@ -1026,15 +1019,11 @@ const personFee = (registration, activities) => {
 };
 
 async function downloadCsv() {
-  const generation = loginGeneration;
-  const registrations = await allRegistrations();
-  // A shared device must not receive the names after the person who asked has logged out.
-  if (generation !== loginGeneration) return;
   const activities = currentActivities();
   const districts = new Map(reference.districts.map((item) => [item.id, item.name]));
   const rows = [["流水號", "姓名", "區", "兒童", "家長姓名", "匯入狀態", ...activities.map((item) => item.title),
     "開家接待", "接待對象", "可接待人數", "是否可以接機", "可接機人數", "用餐身分", "預估應付餐費", "餐費計入的活動"]];
-  for (const registration of activeRegistrations(registrations)) {
+  for (const registration of activeRegistrations(await allRegistrations())) {
     const choices = new Map(registration.registration_choices.map((item) => [item.activity_id, item.attending]));
     const hosting = hostingOf(registration);
     const pickup = pickupOf(registration);
@@ -1248,7 +1237,7 @@ function openRegistration(registration, editing = false) {
   const voidForm = document.querySelector("#void-form");
   voidForm.reset();
   voidForm.querySelectorAll("input, button").forEach((control) => control.disabled = registration.record_status === "void");
-  if (switching) detail.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  if (switching) detail.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
 }
 
 // A parent's record lists the children naming them. While viewing, a name opens that child's record;
@@ -1316,9 +1305,7 @@ async function refreshRegistration(saved) {
 }
 
 async function loadStaff() {
-  const generation = loginGeneration;
   const { staff } = await api("list_staff");
-  if (generation !== loginGeneration) return;
   const rows = document.querySelector("#staff-rows");
   rows.replaceChildren();
   for (const person of staff) {
@@ -1354,7 +1341,7 @@ function openStaffEditor(person) {
   const self = person.auth_user_id === profile.auth_user_id;
   passwordForm.hidden = self;
   document.querySelector("#staff-password-self").hidden = !self;
-  editor.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  editor.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
 }
 
 async function toggleStaff(person) {
@@ -1367,9 +1354,7 @@ async function toggleStaff(person) {
 }
 
 async function openStaff() {
-  const generation = loginGeneration;
   const result = await api("me", { include_reference: true });
-  if (generation !== loginGeneration) return;
   profile = result.profile;
   const openingProfile = profile;
   loginPanel.hidden = true;
@@ -1382,9 +1367,7 @@ async function openStaff() {
   showAdminSections(false);
   try {
     if (result.reference_error) throw new Error(result.reference_error);
-    const nextReference = result.settings ? result : await api("list_reference");
-    if (generation !== loginGeneration) return;
-    reference = nextReference;
+    reference = result.settings ? result : await api("list_reference");
     Meals.configure(reference.identities, true, reference.settings);
     // renderReference also builds the new-registration form, so it runs once either way.
     if (isAdmin) renderReference();
@@ -1636,7 +1619,10 @@ identityReorderButton.addEventListener("click", async () => {
   } catch (error) {
     if (error.status !== 409) return showError(error);
     try { reference.identities = (await api("list_reference")).identities; }
-    catch (reloadError) { return showMessage(`${error.message}（重新載入失敗：${reloadError.message}）`, true); }
+    catch (reloadError) {
+      if (!reloadError.stale) showMessage(`${error.message}（重新載入失敗：${reloadError.message}）`, true);
+      return;
+    }
     setIdentityReordering(false);
     redrawIdentities();
     return showMessage("身分清單已有變動，已重新載入，請再調整一次排序。", true);
@@ -1691,7 +1677,8 @@ reorderButton.addEventListener("click", async () => {
     try {
       reference.activities = (await api("list_reference")).activities;
     } catch (reloadError) {
-      return showMessage(`${error.message}（重新載入失敗：${reloadError.message}）`, true);
+      if (!reloadError.stale) showMessage(`${error.message}（重新載入失敗：${reloadError.message}）`, true);
+      return;
     }
     setReordering(false);
     renderNewRegistrationForm();
@@ -1837,7 +1824,7 @@ function showChangePassword(visible, byChoice = false) {
 
 document.querySelector("#change-password-button").addEventListener("click", () => {
   showChangePassword(true, true);
-  changePasswordPanel.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  changePasswordPanel.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
   document.querySelector('#change-password-form input[name="current_password"]').focus();
 });
 document.querySelector("#cancel-change-password").addEventListener("click", () => showChangePassword(false));

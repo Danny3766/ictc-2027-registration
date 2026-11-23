@@ -3110,7 +3110,7 @@ test("a stale clear-search failure cannot restore fields over a newer search", a
 });
 
 for (const action of ["next", "previous", "search"]) {
-  test(`review fixes: ${action} retains keyboard focus and ignores repeated activation`, async ({ page }) => {
+  test(`${action} retains keyboard focus and ignores repeated activation`, async ({ page }) => {
     await mockStaff(page, "staff", () => {}, "original", {
       list_registrations: () => ({ json: loadingList("original", 41) }),
     });
@@ -3138,7 +3138,7 @@ for (const action of ["next", "previous", "search"]) {
   });
 }
 
-test("review fixes: a timed out list restores controls and can be retried", async ({ page }) => {
+test("a timed out list restores controls and can be retried", async ({ page }) => {
   await mockStaff(page, "staff", () => {}, "original", {
     list_registrations: () => ({ json: loadingList("original") }),
   });
@@ -3161,7 +3161,7 @@ test("review fixes: a timed out list restores controls and can be retried", asyn
   await expect(page.locator("#registration-rows")).toContainText("retry");
 });
 
-test("review fixes: a 401 from before a token refresh still expires the same login", async ({ page }) => {
+test("a 401 from before a token refresh still expires the same login", async ({ page }) => {
   await mockStaff(page, "staff", () => {}, "original");
   await login(page);
   await expect(page.locator("#registration-rows")).toContainText("original");
@@ -3179,7 +3179,7 @@ test("review fixes: a 401 from before a token refresh still expires the same log
 });
 
 for (const status of [200, 400]) {
-  test(`review fixes: a stale token refresh ${status} cannot affect a later login`, async ({ page }) => {
+  test(`a stale token refresh ${status} cannot affect a later login`, async ({ page }) => {
     await mockStaff(page, "staff", () => {}, "original");
     await login(page);
     await expect(page.locator("#registration-rows")).toContainText("original");
@@ -3204,7 +3204,7 @@ for (const status of [200, 400]) {
   });
 }
 
-test("review fixes: a failed second login clears the first login's stored session", async ({ page }) => {
+test("a failed second login clears the first login's stored session", async ({ page }) => {
   await mockStaff(page, "admin");
   let older;
   await page.route("**/functions/v1/staff", async (route) => {
@@ -3234,7 +3234,7 @@ test("review fixes: a failed second login clears the first login's stored sessio
   expect(await page.evaluate(() => sessionStorage.getItem(sessionKey))).toBeNull();
 });
 
-test("review fixes: login expiry takes priority over a list timeout during token refresh", async ({ page }) => {
+test("login expiry takes priority over a list timeout during token refresh", async ({ page }) => {
   await mockStaff(page, "staff", () => {}, "original");
   await login(page);
   await expect(page.locator("#registration-rows")).toContainText("original");
@@ -3256,7 +3256,7 @@ for (const [action, success] of [
   ["set_import_status", "匯入狀態已更新"],
   ["create_registration", "協助登記已建立"],
 ]) {
-  test(`review fixes: ${action} reports the successful write when its list refresh fails`, async ({ page }) => {
+  test(`${action} reports the successful write when its list refresh fails`, async ({ page }) => {
     let failRefresh = false;
     let writes = 0;
     await mockStaff(page, "staff", () => {}, "original", {
@@ -3290,7 +3290,7 @@ for (const [action, success] of [
   });
 }
 
-test("review fixes: an older me response cannot replace the second login", async ({ page }) => {
+test("an older me response cannot replace the second login", async ({ page }) => {
   let meCalls = 0;
   await mockStaff(page, "staff", () => {}, "original", {
     me: () => ({ json: { profile: { auth_user_id: "second", display_name: "second login", role: "staff", must_change_password: false } } }),
@@ -3313,7 +3313,7 @@ test("review fixes: an older me response cannot replace the second login", async
   await expect(page.locator('.staff-nav [href="#admin-accounts"]')).toBeHidden();
 });
 
-test("review fixes: staff rows from a logged out admin remain empty", async ({ page }) => {
+test("staff rows from a logged out admin remain empty", async ({ page }) => {
   await mockStaff(page, "admin");
   let pending;
   await page.route("**/functions/v1/staff", async (route) => {
@@ -3331,7 +3331,7 @@ test("review fixes: staff rows from a logged out admin remain empty", async ({ p
   await expect(page.locator("#staff-rows tr")).toHaveCount(0);
 });
 
-test("review fixes: a failed first list after relogin has no previous count or page", async ({ page }) => {
+test("a failed first list after relogin has no previous count or page", async ({ page }) => {
   let fail = false;
   await mockStaff(page, "staff", () => {}, "original", {
     list_registrations: () => fail ? { status: 503, json: { error: "list unavailable" } } : { json: loadingList("original") },
@@ -3350,7 +3350,7 @@ test("review fixes: a failed first list after relogin has no previous count or p
 });
 
 for (const order of ["original-first", "takeover-first"]) {
-  test(`review fixes: an inherited refresh completes the original void action's detail update: ${order}`, async ({ page }) => {
+  test(`an inherited refresh completes the original void action's detail update: ${order}`, async ({ page }) => {
     let person = loadingList("original").registrations[0];
     await mockStaff(page, "staff", () => {}, "original", {
       list_registrations: () => ({ json: { count: 1, registrations: [person] } }),
@@ -3384,7 +3384,7 @@ for (const order of ["original-first", "takeover-first"]) {
     await expect(page.locator("#start-registration-edit")).toBeHidden();
   });
 
-  test(`review fixes: an inherited child search still fills the field and opens its detail: ${order}`, async ({ page }) => {
+  test(`an inherited child search still fills the field and opens its detail: ${order}`, async ({ page }) => {
     await mockStaff(page, "staff", () => {}, "original", familyReplies);
     await login(page);
     await page.locator("#registration-rows button").first().click();
@@ -3407,7 +3407,7 @@ for (const order of ["original-first", "takeover-first"]) {
     await expect(page.locator("#detail-title")).toContainText("王小明");
   });
 
-  test(`review fixes: a failed inherited clear restores the fields: ${order}`, async ({ page }) => {
+  test(`a failed inherited clear restores the fields: ${order}`, async ({ page }) => {
     await mockStaff(page, "staff", () => {}, "original");
     await login(page);
     const search = page.locator('#search-form [name="search"]');
@@ -3432,7 +3432,7 @@ for (const order of ["original-first", "takeover-first"]) {
   });
 }
 
-test("review fixes: an empty page with a null count recounts and terminates at page zero", async ({ page }) => {
+test("an empty page with a null count recounts and terminates at page zero", async ({ page }) => {
   let empty = false;
   const requests = [];
   await mockStaff(page, "staff", () => {}, "original", {
@@ -3454,7 +3454,7 @@ test("review fixes: an empty page with a null count recounts and terminates at p
   await expect(page.locator("#page-number")).toHaveText("第 1 頁");
 });
 
-test("review fixes: processing the only record on the last filtered page returns to a populated page", async ({ page }) => {
+test("processing the only record on the last filtered page returns to a populated page", async ({ page }) => {
   let imported = false;
   const people = Array.from({ length: 11 }, (_, index) => ({
     ...loadingList(`person ${index + 1}`).registrations[0],
@@ -3482,7 +3482,7 @@ test("review fixes: processing the only record on the last filtered page returns
   await expect(page.locator("#registration-count")).toHaveText("共 10 筆，目前第 1 至 10 筆");
 });
 
-test("review fixes: a stalled token refresh times out the list and a retry shares that refresh", async ({ page }) => {
+test("a stalled token refresh times out the list and a retry shares that refresh", async ({ page }) => {
   await mockStaff(page, "staff", () => {}, "original");
   await login(page);
   await expect(page.locator("#registration-rows")).toContainText("original");
@@ -3509,7 +3509,7 @@ test("review fixes: a stalled token refresh times out the list and a retry share
 });
 
 for (const conditions of ["applied", "typed"]) {
-  test(`review fixes: clearing ${conditions} conditions keeps keyboard focus through a failed load`, async ({ page }) => {
+  test(`clearing ${conditions} conditions keeps keyboard focus through a failed load`, async ({ page }) => {
     await mockStaff(page, "staff", () => {}, "original");
     await login(page);
     await expect(page.locator("#registration-rows")).toContainText("original");
@@ -3541,7 +3541,7 @@ for (const conditions of ["applied", "typed"]) {
 }
 
 for (const [action, expected] of [["next", "#previous-page"], ["previous", "#next-page"], ["clear", '#search-form [name="search"]']]) {
-  test(`review fixes: ${action} that ends up disabled hands keyboard focus to ${expected}`, async ({ page }) => {
+  test(`${action} that ends up disabled hands keyboard focus to ${expected}`, async ({ page }) => {
     await mockStaff(page, "staff", () => {}, "original", {
       list_registrations: ({ page: number = 0 }) => ({ json: loadingList(`page ${number}`, 11) }),
     });
@@ -3562,7 +3562,7 @@ for (const [action, expected] of [["next", "#previous-page"], ["previous", "#nex
   });
 }
 
-test("review fixes: a void refresh replaced by new conditions still updates the record", async ({ page }) => {
+test("a void refresh replaced by new conditions still updates the record", async ({ page }) => {
   let person = loadingList("original").registrations[0];
   await mockStaff(page, "staff", () => {}, "original", {
     list_registrations: () => ({ json: { count: 1, registrations: [person] } }),
@@ -3586,7 +3586,7 @@ test("review fixes: a void refresh replaced by new conditions still updates the 
   await finishListRequest(page, pending[1], { json: { count: 0, registrations: [] } });
 });
 
-test("review fixes: a replaced login's network failure shows no error", async ({ page }) => {
+test("a replaced login's network failure shows no error", async ({ page }) => {
   await mockStaff(page, "staff");
   let first;
   await page.route("**/auth/v1/token?grant_type=password", async (route) => {
@@ -3608,7 +3608,7 @@ for (const [kind, button, action] of [
   ["statistics CSV", "下載統計 CSV", "registration_statistics"],
   ["registration CSV", "下載報名登記 CSV", "list_registrations"],
 ]) {
-  test(`review fixes: ${kind} requested before logout delivers nothing afterwards`, async ({ page }) => {
+  test(`${kind} requested before logout delivers nothing afterwards`, async ({ page }) => {
     await mockStaff(page, "staff", () => {}, "測試登記", familyReplies);
     let hold = false;
     let held;
@@ -3640,7 +3640,38 @@ for (const [kind, button, action] of [
   });
 }
 
-test("review fixes: a late void refresh leaves a record opened and being edited since then alone", async ({ page }) => {
+test("a registration created before logout leaves the next login's 協助登記 form alone", async ({ page }) => {
+  let held;
+  await mockStaff(page, "staff", () => {}, "original");
+  await page.route("**/functions/v1/staff", async (route) => {
+    if (route.request().postDataJSON().action === "create_registration") { held = route; return; }
+    await route.fallback();
+  });
+  await login(page, "協助登記");
+  const form = page.locator("#new-registration-form");
+  await form.locator('[name="full_name"]').fill("created person");
+  await form.locator('[name="meal_identity"]').selectOption("general");
+  await form.locator('[name="district_id"]').selectOption("1");
+  await form.locator('input[name="activity_1"][value="true"]').check();
+  await form.locator('button[type="submit"]').click();
+  await expect.poll(() => Boolean(held)).toBe(true);
+  await page.locator("#logout-button").click();
+  await page.locator('#login-form [name="username"]').fill("tester");
+  await page.locator('#login-form [name="password"]').fill("test-password");
+  await page.locator('#login-form button[type="submit"]').click();
+  await expect(page.locator("#registration-rows")).toContainText("original");
+  await go(page, "協助登記");
+  await form.locator('[name="full_name"]').fill("next person");
+  const response = page.waitForResponse((reply) => reply.request() === held.request());
+  await held.fulfill({ status: 201, json: { serial_no: 2 } });
+  await response;
+  await settle(page);
+  await expect(form.locator('[name="full_name"]')).toHaveValue("next person");
+  await expect(page.locator("#new-registration-code")).toBeHidden();
+  await expect(page.locator("#message")).not.toHaveText("協助登記已建立。");
+});
+
+test("a late void refresh leaves a record opened and being edited since then alone", async ({ page }) => {
   const first = { ...loadingList("first person").registrations[0] };
   const second = { ...first, id: "223e4567-e89b-42d3-a456-426614174999", serial_no: 2, full_name: "second person" };
   const people = () => [first, second];
@@ -3672,7 +3703,7 @@ test("review fixes: a late void refresh leaves a record opened and being edited 
   await expect(page.locator('#edit-registration-form input[name="full_name"]')).toHaveValue("unsaved change");
 });
 
-test("review fixes: an older login's failed me shows no error over the second login", async ({ page }) => {
+test("an older login's failed me shows no error over the second login", async ({ page }) => {
   let meCalls = 0;
   await mockStaff(page, "staff", () => {}, "original");
   let older;
@@ -3693,7 +3724,7 @@ test("review fixes: an older login's failed me shows no error over the second lo
   await expect(page.locator("#toast")).toBeHidden();
 });
 
-test("review fixes: a skipped count never shows fewer records than the rows on screen", async ({ page }) => {
+test("a skipped count never shows fewer records than the rows on screen", async ({ page }) => {
   const people = Array.from({ length: 21 }, (_, index) => ({
     ...loadingList(`person ${index + 1}`).registrations[0],
     id: `223e4567-e89b-42d3-a456-${String(index).padStart(12, "0")}`, serial_no: index + 1,
@@ -3724,7 +3755,7 @@ test("review fixes: a skipped count never shows fewer records than the rows on s
   await expect(page.locator("#registration-count")).toHaveText("共 0 筆");
 });
 
-test("review fixes: an activity audience check started before logout asks nothing afterwards", async ({ page }) => {
+test("an activity audience check started before logout asks nothing afterwards", async ({ page }) => {
   const attending = { ...loadingList("attending").registrations[0], registration_choices: [{ activity_id: 1, attending: true }] };
   await mockStaff(page, "admin", () => {}, "test", {
     ...threeActivities,

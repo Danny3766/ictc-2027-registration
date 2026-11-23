@@ -1619,7 +1619,6 @@ test("reminders are blue blocks, and the lookup result is framed with a grey not
   await expect(note.locator(".edit-only")).toBeHidden();
 });
 
-
 for (const hostingOpen of [false, true]) {
   for (const pickupOpen of [false, true]) {
     test(`public fields start valid including edit surveys: hosting=${hostingOpen}, pickup=${pickupOpen}`, async ({ page }) => {
@@ -1679,7 +1678,6 @@ test("selected tabs keep a shape indicator in forced colors", async ({ page }) =
   await page.emulateMedia({ forcedColors: "none" });
   await expect(selected).toHaveCSS("background-color", "rgb(35, 98, 75)");
   expect(await selected.evaluate((tab) => getComputedStyle(tab, "::after").content)).toBe("none");
-
 });
 
 test("public GET omits preflight-triggering headers while POST keeps its JSON headers", async ({ page }) => {
