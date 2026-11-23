@@ -159,13 +159,14 @@ test("CORS preflight caches permissions for two hours without requiring authenti
   const reply = await handler(new Request("https://example.test", {
     method: "OPTIONS",
     headers: { Origin: "https://example.github.io", "Access-Control-Request-Method": "POST",
-      "Access-Control-Request-Headers": "apikey, content-type" },
+      "Access-Control-Request-Headers": "apikey, authorization, content-type" },
   }));
   assert.equal(reply.status, 204);
   assert.equal(reply.headers.get("Access-Control-Max-Age"), "7200");
   assert.equal(reply.headers.get("Access-Control-Allow-Origin"), "*");
   assert.match(reply.headers.get("Access-Control-Allow-Methods"), /POST/);
   assert.match(reply.headers.get("Access-Control-Allow-Headers"), /apikey/);
+  assert.match(reply.headers.get("Access-Control-Allow-Headers"), /authorization/);
   assert.match(reply.headers.get("Access-Control-Allow-Headers"), /content-type/);
   assert.equal(await reply.text(), "");
 });
