@@ -77,7 +77,7 @@ function showMessage(text, error = false, position = "form", scroll = true) {
   target.textContent = text;
   target.classList.toggle("error", error);
   target.hidden = false;
-  if (scroll) target.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (scroll) target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
 }
 
 function fieldName(control) {
@@ -89,10 +89,17 @@ function fieldName(control) {
   }[control.name] ?? control.name;
 }
 
+// Only the public page manages aria-invalid; staff forms use native validation.
+function initializeValidation(container) {
+  for (const control of container.querySelectorAll(':is(input, select, textarea):not([aria-invalid])')) {
+    control.setAttribute("aria-invalid", "false");
+  }
+}
+
 function clearValidation() {
   for (const form of [registrationForm, queryForm, editForm]) {
     form.querySelectorAll(".field-invalid").forEach((field) => field.classList.remove("field-invalid"));
-    form.querySelectorAll('[aria-invalid="true"]').forEach((field) => field.removeAttribute("aria-invalid"));
+    form.querySelectorAll('[aria-invalid="true"]').forEach((field) => field.setAttribute("aria-invalid", "false"));
   }
   if (validationForm) message.hidden = true;
   validationForm = null;
@@ -148,7 +155,7 @@ async function api(body) {
 function mapLink(value) {
   const url = Meals.mapUrl(value);
   if (!url) return "";
-  const href = escapeHtml(url).replaceAll('"', "&quot;");
+  const href = escapeHtml(url);
   return `<p class="hint"><a href="${href}" target="_blank" rel="noopener noreferrer">查看地圖</a></p>`;
 }
 
@@ -170,8 +177,8 @@ function activityFields(activities, values = new Map(), showMap = true) {
     return `<div class="activity" data-activity="${activity.id}">
       ${activityDetails(activity, showMap)}
       <div class="activity-options">
-        <label><input type="radio" name="activity_${activity.id}" value="true" ${selected === true ? "checked" : ""} required>參加</label>
-        <label><input type="radio" name="activity_${activity.id}" value="false" ${selected === false ? "checked" : ""} required>不參加</label>
+        <label><input aria-invalid="false" type="radio" name="activity_${activity.id}" value="true" ${selected === true ? "checked" : ""} required>參加</label>
+        <label><input aria-invalid="false" type="radio" name="activity_${activity.id}" value="false" ${selected === false ? "checked" : ""} required>不參加</label>
       </div>
     </div>`;
   }).join("");
@@ -191,7 +198,7 @@ function activitySummaryFields(activities, values) {
 function escapeHtml(value) {
   const element = document.createElement("span");
   element.textContent = String(value ?? "");
-  return element.innerHTML;
+  return element.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
 function showProgram(program) {
@@ -275,6 +282,7 @@ function syncRegistrationSurveys() {
     if (identity && container.dataset.wasAllowed === "true" && !allowed
       && container.dataset.identity !== identity) renderer.render(container, null);
     if (show && container.dataset[kind] === undefined) renderer.render(container);
+    initializeValidation(container);
     if (identity) Object.assign(container.dataset, { wasAllowed: String(allowed), identity });
     survey.hidden = !show;
     // A hidden required control must not block the other survey or the whole form.
@@ -460,6 +468,7 @@ function showHostingSummary() {
         container.append(hint);
       }
     }
+    initializeValidation(container);
     container.dataset.editable = String(editable);
     if (identity) Object.assign(container.dataset, { wasAllowed: String(allowed), identity });
   }

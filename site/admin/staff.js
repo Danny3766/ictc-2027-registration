@@ -124,7 +124,15 @@ function showMessage(value, error = false, stay = error) {
   document.querySelector("#message-live").textContent = value;
   message.classList.toggle("error", error);
   toast.hidden = false;
-  if (!stay) messageTimer = setTimeout(hideMessage, 5000);
+  if (!stay) messageTimer = setTimeout(dismissMessage, 5000);
+}
+
+function dismissMessage() {
+  if (toast.contains(document.activeElement)) {
+    messageTimer = setTimeout(dismissMessage, 1000);
+    return;
+  }
+  hideMessage();
 }
 
 function hideMessage() {
@@ -378,7 +386,7 @@ function fillForm(form, values, scroll = true) {
     if (field.type === "checkbox") field.checked = Boolean(value);
     else field.value = value ?? "";
   }
-  if (scroll) form.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (scroll) form.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
 }
 
 // The edited row's id lives only here, so abandoning an edit (取消編輯) can never update that row.
@@ -1082,7 +1090,7 @@ function openRegistration(registration, editing = false) {
   const voidForm = document.querySelector("#void-form");
   voidForm.reset();
   voidForm.querySelectorAll("input, button").forEach((control) => control.disabled = registration.record_status === "void");
-  if (switching) detail.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (switching) detail.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
 }
 
 // A parent's record lists the children naming them. While viewing, a name opens that child's record;
@@ -1175,7 +1183,7 @@ function openStaffEditor(person) {
   const self = person.auth_user_id === profile.auth_user_id;
   passwordForm.hidden = self;
   document.querySelector("#staff-password-self").hidden = !self;
-  editor.scrollIntoView({ behavior: "smooth", block: "center" });
+  editor.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
 }
 
 async function toggleStaff(person) {
@@ -1527,7 +1535,12 @@ reorderButton.addEventListener("click", async () => {
 
 cancelReorderButton.addEventListener("click", () => setReordering(false));
 
-for (const [sortRows, sortSection] of [[activityRows, activitySection], [identityRows, identitySection]]) {
+for (const [sortRows, sortSection, statusId] of [
+  [activityRows, activitySection, "#activity-reorder-status"],
+  [identityRows, identitySection, "#identity-reorder-status"],
+]) {
+  const status = document.querySelector(statusId);
+  let reorderAnnouncement;
   sortRows.addEventListener("pointerdown", (event) => {
     const handle = event.target.closest(".drag-handle");
     // Only the first finger or the main mouse button drags; a second finger or a right-click does not.
@@ -1600,9 +1613,13 @@ for (const [sortRows, sortSection] of [[activityRows, activitySection], [identit
     else sortRows.insertBefore(row, before);
     row.scrollIntoView({ block: "nearest", inline: "nearest" });
     handle.focus({ preventScroll: true });
-    if (sortRows === identityRows) {
-      document.querySelector("#identity-reorder-status").textContent = `${row.cells[0].textContent}，第 ${[...sortRows.rows].indexOf(row) + 1} 位`;
-    }
+    clearTimeout(reorderAnnouncement);
+    status.textContent = "";
+    // Safari refocuses the reinserted handle; let that announcement finish first.
+    reorderAnnouncement = setTimeout(() => {
+      if (!sortRows.contains(row)) return;
+      status.textContent = `${(row.cells[0].querySelector("summary") ?? row.cells[0]).textContent}，第 ${[...sortRows.rows].indexOf(row) + 1} 位`;
+    }, 500);
   });
 }
 
@@ -1633,7 +1650,7 @@ function showChangePassword(visible, byChoice = false) {
 
 document.querySelector("#change-password-button").addEventListener("click", () => {
   showChangePassword(true, true);
-  changePasswordPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  changePasswordPanel.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
   document.querySelector('#change-password-form input[name="current_password"]').focus();
 });
 document.querySelector("#cancel-change-password").addEventListener("click", () => showChangePassword(false));

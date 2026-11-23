@@ -51,7 +51,7 @@
         <form id="registration-form">
           <div class="identity-fields with-child">
             <label
-              >姓名<input
+              >姓名<input aria-invalid="false"
                 name="full_name"
                 maxlength="100"
                 pattern=".*\S.*"
@@ -59,11 +59,11 @@
                 required
             /></label>
             <label
-              >區<select name="district_id" required>
+              >區<select aria-invalid="false" name="district_id" required>
                 <option value="">請選擇</option>
               </select></label
             >
-            <label class="identity-select">身分別<select name="meal_identity" required><option value="">請選擇</option></select></label>
+            <label class="identity-select">身分別<select aria-invalid="false" name="meal_identity" required><option value="">請選擇</option></select></label>
           </div>
           <div class="reminder">
             <p class="preschool-hint" hidden>6 歲（含）以內且身高 115 公分以下，年齡以特會當天為準</p>
@@ -87,9 +87,9 @@
             <p class="reminder">請為每項活動選擇參加或不參加，報名截止前都可以修改登記</p>
             <div id="activities"></div>
           </fieldset>
-          <label class="parent-name" hidden>家長姓名<input name="parent_name" maxlength="20" pattern=".*\S.*" autocomplete="off" required disabled /></label>
+          <label class="parent-name" hidden>家長姓名<input aria-invalid="false" name="parent_name" maxlength="20" pattern=".*\S.*" autocomplete="off" required disabled /></label>
           <label class="honeypot" aria-hidden="true"
-            >網站<input name="website" tabindex="-1" autocomplete="off"
+            >網站<input aria-invalid="false" name="website" tabindex="-1" autocomplete="off"
           /></label>
           <button type="submit">送出登記</button>
         </form>
@@ -98,8 +98,8 @@
         <form id="query-form">
           <p class="hint">請輸入登記時的姓名與區；姓名寫法須與登記時相同，大小寫與空白不影響查詢。</p>
           <div class="identity-fields">
-            <label>姓名<input name="full_name" maxlength="100" pattern=".*\S.*" autocomplete="off" required /></label>
-            <label>區<select name="district_id" required>
+            <label>姓名<input aria-invalid="false" name="full_name" maxlength="100" pattern=".*\S.*" autocomplete="off" required /></label>
+            <label>區<select aria-invalid="false" name="district_id" required>
                 <option value="">請選擇</option>
               </select></label>
           </div>
@@ -108,9 +108,9 @@
         <form id="edit-form" class="result-frame" hidden>
           <h2 class="result-title">登記內容</h2>
           <div class="identity-fields with-child">
-            <label>姓名<input id="edit-full-name" readonly /></label>
-            <label>區<input id="edit-district" readonly /></label>
-            <label class="identity-select">身分別<select name="meal_identity" required disabled><option value="">請選擇</option></select></label>
+            <label>姓名<input aria-invalid="false" id="edit-full-name" readonly /></label>
+            <label>區<input aria-invalid="false" id="edit-district" readonly /></label>
+            <label class="identity-select">身分別<select aria-invalid="false" name="meal_identity" required disabled><option value="">請選擇</option></select></label>
           </div>
           <div class="reminder">
             <p class="preschool-hint" hidden>6 歲（含）以內且身高 115 公分以下，年齡以特會當天為準</p>
@@ -135,7 +135,7 @@
             <p class="reminder edit-only" hidden>請為每項活動選擇參加或不參加，報名截止前都可以修改登記</p>
             <div id="edit-activities"></div>
           </fieldset>
-          <label class="parent-name" hidden>家長姓名<input name="parent_name" maxlength="20" pattern=".*\S.*" autocomplete="off" required readonly /></label>
+          <label class="parent-name" hidden>家長姓名<input aria-invalid="false" name="parent_name" maxlength="20" pattern=".*\S.*" autocomplete="off" required readonly /></label>
           <div class="actions">
             <button id="start-edit" type="button">修改登記內容</button>
             <button id="save-edit" type="submit" hidden disabled>儲存修改</button>

@@ -96,7 +96,7 @@ test("announcements stay above the schedule while query and edit results appear 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "取消修改" }).click();
   await expect(page.locator("#page-message")).toHaveText("以下為目前登記內容。");
-  await expect(page.locator("#edit-form .field-invalid, #edit-form [aria-invalid]")).toHaveCount(0);
+  await expect(page.locator('#edit-form .field-invalid, #edit-form [aria-invalid="true"]')).toHaveCount(0);
   await page.getByRole("button", { name: "修改登記內容" }).click();
   await page.locator('#edit-form select[name="meal_identity"]').selectOption("general");
   await page.locator('#edit-form input[name="activity_1"][value="false"]').check();
@@ -1617,4 +1617,67 @@ test("reminders are blue blocks, and the lookup result is framed with a grey not
   await page.getByRole("button", { name: "取消修改" }).click();
   await expect(result.locator("fieldset p.reminder")).toBeHidden();
   await expect(note.locator(".edit-only")).toBeHidden();
+});
+
+
+for (const hostingOpen of [false, true]) {
+  for (const pickupOpen of [false, true]) {
+    test(`public fields start valid including edit surveys: hosting=${hostingOpen}, pickup=${pickupOpen}`, async ({ page }) => {
+      await page.route("**/functions/v1/registration", (route) => route.fulfill({
+        json: route.request().method() === "GET"
+          ? { ...openPage(), settings: { ...openPage().settings, is_hosting_open: hostingOpen, is_pickup_open: pickupOpen } }
+          : queried(true),
+      }));
+      await page.goto("/");
+      await expect(page.locator("#activities input")).toHaveCount(2);
+      await page.locator('#registration-form [name="meal_identity"]').selectOption("general");
+      for (const [selector, open] of [["#hosting-fields", hostingOpen], ["#pickup-fields", pickupOpen]]) {
+        if (open) await expect(page.locator(`${selector} input`).first()).toBeVisible();
+      }
+      for (const selector of ["#registration-form", "#query-form"]) {
+        await expect(page.locator(`${selector} :is(input, select, textarea):not([aria-invalid="false"])`)).toHaveCount(0);
+      }
+      await query(page);
+      await page.locator("#start-edit").click();
+      await expect(page.locator("#edit-activities input")).toHaveCount(2);
+      for (const [selector, open] of [["#edit-hosting", hostingOpen], ["#edit-pickup", pickupOpen]]) {
+        if (open) await expect(page.locator(`${selector} input`).first()).toBeVisible();
+      }
+      await expect(page.locator('#edit-form :is(input, select, textarea):not([aria-invalid="false"])')).toHaveCount(0);
+    });
+  }
+}
+
+test("public messages respect changes to reduced motion and HTML escaping protects quoted attributes", async ({ page }) => {
+  await page.route("**/functions/v1/registration", (route) => route.fulfill({ json: openPage() }));
+  await page.goto("/");
+  await expect(page.locator("#activities input")).toHaveCount(2);
+  for (const [reducedMotion, expected] of [["reduce", "auto"], ["no-preference", "smooth"]]) {
+    await page.emulateMedia({ reducedMotion });
+    const behavior = await page.evaluate(() => {
+      const target = document.querySelector("#page-message");
+      let behavior;
+      target.scrollIntoView = (options) => { behavior = options.behavior; };
+      showMessage("test");
+      return behavior;
+    });
+    expect(behavior).toBe(expected);
+  }
+  expect(await page.evaluate(() => escapeHtml('<>&"' + "'"))).toBe("&lt;&gt;&amp;&quot;&#39;");
+});
+
+test("selected tabs keep a shape indicator in forced colors", async ({ page }) => {
+  await page.route("**/functions/v1/registration", (route) => route.fulfill({ json: openPage() }));
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.goto("/");
+  const selected = page.locator('[role="tab"][aria-selected="true"]');
+  const indicator = await selected.evaluate((tab) => {
+    const style = getComputedStyle(tab, "::after");
+    return { content: style.content, border: style.borderBlockEndStyle, width: style.borderBlockEndWidth };
+  });
+  expect(indicator).toEqual({ content: '\x22\x22', border: "solid", width: "3px" });
+  await page.emulateMedia({ forcedColors: "none" });
+  await expect(selected).toHaveCSS("background-color", "rgb(35, 98, 75)");
+  expect(await selected.evaluate((tab) => getComputedStyle(tab, "::after").content)).toBe("none");
+
 });

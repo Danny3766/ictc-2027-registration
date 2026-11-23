@@ -966,6 +966,7 @@ test("activities can be reordered by dragging or arrow keys and saved together",
   await handles.nth(0).focus();
   await page.keyboard.press("ArrowDown");
   expect(await activityTitles(page)).toEqual(["活動乙", "活動甲", "活動丙"]);
+  await expect(page.locator("#activity-reorder-status")).toHaveText("活動甲，第 2 位");
 
   // Drag 活動丙 above the first row with pointer moves. Center the table first so the sticky
   // navigation bar does not cover the rows.
@@ -1127,10 +1128,15 @@ test("success messages float at the bottom and leave after 5 seconds; errors sta
   await login(page, "網站設定");
   await page.getByRole("button", { name: "儲存網站設定" }).click();
   await expect(page.locator("#message")).toHaveText("設定已儲存。");
-  await expect(page.getByRole("status")).toHaveText("設定已儲存。");
+  await expect(page.locator("#message-live")).toHaveText("設定已儲存。");
   const box = await page.locator("#toast").boundingBox();
   expect(box.y + box.height).toBeGreaterThan(page.viewportSize().height - 40);
+  await page.locator("#message-close").focus();
   await page.clock.fastForward(6000);
+  await expect(page.locator("#toast")).toBeVisible();
+  await expect(page.locator("#message-close")).toBeFocused();
+  await page.getByRole("button", { name: "儲存網站設定" }).focus();
+  await page.clock.fastForward(1000);
   await expect(page.locator("#message")).toBeHidden();
 
   await go(page, "活動");
@@ -2620,4 +2626,52 @@ test("協助登記 shows the child reminders as a blue block and the survey pane
   await expect(form.locator(".hosting-panel")).toBeHidden();
   await identity.selectOption("general");
   await expect(form.locator(".hosting-panel")).toBeVisible();
+});
+
+for (const [kind, view, rowsId, reorderId, cancelId, statusId] of [
+  ["activity", "活動", "#activity-rows", "#reorder-activities", "#cancel-reorder", "#activity-reorder-status"],
+  ["identity", "身分別", "#identity-rows", "#reorder-identities", "#cancel-identity-reorder", "#identity-reorder-status"],
+]) {
+  test(`${kind} reorder announces its name and position`, async ({ page }) => {
+    await mockStaff(page, "admin", () => {}, "test", threeActivities);
+    await login(page, view);
+    await page.locator(reorderId).click();
+    const name = await page.locator(`${rowsId} tr`).first().locator(kind === "activity" ? "summary" : "td").first().textContent();
+    await page.locator(`${rowsId} .drag-handle`).first().press("ArrowDown");
+    await expect(page.locator(statusId)).toHaveText(`${name}，第 2 位`);
+  });
+
+  for (const action of ["cancel", "save"]) {
+    test(`${kind} reorder suppresses detached row announcements after quick ${action}`, async ({ page }) => {
+      await mockStaff(page, "admin", () => {}, "test", {
+        ...threeActivities,
+        reorder_activities: () => ({ json: { success: true } }),
+        reorder_identities: () => ({ json: { success: true } }),
+      });
+      await login(page, view);
+      await page.clock.install();
+      await page.clock.pauseAt(new Date(Date.now() + 1000));
+      await page.locator(reorderId).click();
+      await page.evaluate(({ rowsId, exitId }) => {
+        document.querySelector(`${rowsId} .drag-handle`).dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+        document.querySelector(exitId).click();
+      }, { rowsId, exitId: action === "cancel" ? cancelId : reorderId });
+      await expect(page.locator(reorderId)).toHaveText("調整排序");
+      await page.clock.fastForward(1000);
+      await expect(page.locator(statusId)).toBeEmpty();
+    });
+  }
+}
+
+test("staff survey fields preserve native validation without a fixed aria-invalid state", async ({ page }) => {
+  const data = threeActivities.list_reference().json;
+  data.settings = { ...data.settings, is_hosting_open: true, is_pickup_open: true };
+  await mockStaff(page, "admin", () => {}, "test", { list_reference: () => ({ json: data }) });
+  await login(page, "協助登記");
+  const form = page.locator("#new-registration-form");
+  await form.locator('[name="meal_identity"]').selectOption("general");
+  const surveys = form.locator('[name="hosting_status"], [name="pickup_status"], [name="guest_count"], [name="guest_type"], [name="pickup_count"]');
+  await expect(surveys).toHaveCount(8);
+  await expect(surveys.locator('xpath=self::*[@aria-invalid]')).toHaveCount(0);
+  expect(await surveys.first().evaluate((control) => control.required && !control.validity.valid)).toBe(true);
 });
