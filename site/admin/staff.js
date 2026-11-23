@@ -68,8 +68,6 @@ const labels = {
   category: { meeting: "聚會", meal: "用餐", other: "其他" },
 };
 const label = (group, value) => labels[group][value] ?? value;
-// Scrolling animates only when the system does not ask for reduced motion.
-const scrollBehavior = () => matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 
 // registration_id is the hosting table's primary key, so the API embeds the one row as an object.
 const hostingOf = (registration) => registration.registration_hosting?.answer_valid === false ? null : Hosting.normalize(registration.registration_hosting);
@@ -167,6 +165,8 @@ function clearSession() {
   }
   document.querySelector("#staff-editor").hidden = true;
   editingStaff = null;
+  // An expired login ends any open confirmation as 取消: it asked about the previous person's data.
+  document.querySelector("dialog.confirm-dialog")?.close();
   document.querySelector("#new-registration-code").textContent = "";
   document.querySelector("#new-registration-code").hidden = true;
   setReordering(false);
@@ -451,7 +451,7 @@ function fillForm(form, values, scroll = true) {
     if (field.type === "checkbox") field.checked = Boolean(value);
     else field.value = value ?? "";
   }
-  if (scroll) form.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+  if (scroll) form.scrollIntoView({ behavior: Ui.scrollBehavior(), block: "center" });
 }
 
 // The edited row's id lives only here, so abandoning an edit (取消編輯) can never update that row.
@@ -618,11 +618,11 @@ async function saveReference(event, kind) {
     return showMessage("請先完成或取消活動排序，再儲存活動。", true);
   }
   if (kind === "settings" && data.is_registration_open && !reference.settings.is_registration_open
-    && !confirm("確定開放登記？請先完成正式環境驗收與核准。")) return;
+    && !await Ui.confirm("確定開放登記？請先完成正式環境驗收與核准。", "開放登記")) return;
   if (kind === "hosting" && data.is_hosting_open && !reference.settings.is_hosting_open
-    && !confirm("確定開放開家接待調查？公開登記頁與查詢頁將顯示接待區塊。")) return;
+    && !await Ui.confirm("確定開放開家接待調查？公開登記頁與查詢頁將顯示接待區塊。", "開放調查")) return;
   if (kind === "hosting" && data.is_pickup_open && !reference.settings.is_pickup_open
-    && !confirm("確定開放接機接待調查？公開登記頁與查詢頁將顯示接機問題。")) return;
+    && !await Ui.confirm("確定開放接機接待調查？公開登記頁與查詢頁將顯示接機問題。", "開放調查")) return;
   const edited = kind === "activity" && reference.activities.find((item) => String(item.id) === form.dataset.editingId);
   if (edited && data.audience !== "all" && data.audience !== edited.audience) {
     // People who signed up before the restriction keep their answer until their next save.
@@ -633,7 +633,7 @@ async function saveReference(event, kind) {
           pickupStatus: pickupOf(registration)?.status, choices: registration.registration_choices,
           activities: reference.activities })).length;
     } catch (error) { return showError(error); }
-    if (outside && !confirm(`目前有 ${outside} 位不符對象的人已報名此活動，他們的報名會保留。確定改為限定對象？`)) return;
+    if (outside && !await Ui.confirm(`目前有 ${outside} 位不符對象的人已報名此活動，他們的報名會保留。確定改為限定對象？`, "改為限定對象")) return;
   }
   try {
     await api("save_reference", { kind, data });
@@ -1237,7 +1237,7 @@ function openRegistration(registration, editing = false) {
   const voidForm = document.querySelector("#void-form");
   voidForm.reset();
   voidForm.querySelectorAll("input, button").forEach((control) => control.disabled = registration.record_status === "void");
-  if (switching) detail.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+  if (switching) detail.scrollIntoView({ behavior: Ui.scrollBehavior(), block: "start" });
 }
 
 // A parent's record lists the children naming them. While viewing, a name opens that child's record;
@@ -1341,11 +1341,12 @@ function openStaffEditor(person) {
   const self = person.auth_user_id === profile.auth_user_id;
   passwordForm.hidden = self;
   document.querySelector("#staff-password-self").hidden = !self;
-  editor.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+  editor.scrollIntoView({ behavior: Ui.scrollBehavior(), block: "center" });
 }
 
 async function toggleStaff(person) {
-  if (!confirm(`確定要${person.is_active ? "停用" : "啟用"} ${person.username}？`)) return;
+  const verb = person.is_active ? "停用" : "啟用";
+  if (!await Ui.confirm(`確定要${verb} ${person.username}？`, verb)) return;
   try {
     await api("set_staff_active", { user_id: person.auth_user_id, is_active: !person.is_active });
     await loadStaff();
@@ -1470,8 +1471,8 @@ function renderIdentities() {
       remove.type = "button";
       remove.className = "secondary";
       remove.textContent = "刪除";
-      remove.addEventListener("click", () => {
-        if (confirm(`刪除身分「${identity.name}」？已使用的身分無法刪除。`)) saveIdentity("delete_identity", { code: identity.code });
+      remove.addEventListener("click", async () => {
+        if (await Ui.confirm(`刪除身分「${identity.name}」？已使用的身分無法刪除。`, "刪除")) saveIdentity("delete_identity", { code: identity.code });
       });
       row.lastElementChild.append(remove);
     }
@@ -1824,7 +1825,7 @@ function showChangePassword(visible, byChoice = false) {
 
 document.querySelector("#change-password-button").addEventListener("click", () => {
   showChangePassword(true, true);
-  changePasswordPanel.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+  changePasswordPanel.scrollIntoView({ behavior: Ui.scrollBehavior(), block: "start" });
   document.querySelector('#change-password-form input[name="current_password"]').focus();
 });
 document.querySelector("#cancel-change-password").addEventListener("click", () => showChangePassword(false));
@@ -1856,16 +1857,25 @@ document.querySelector("#create-staff-form").addEventListener("submit", async (e
 document.querySelector("#edit-staff-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!editingStaff) return;
-  const values = Object.fromEntries(new FormData(event.currentTarget));
+  const form = event.currentTarget;
+  const values = Object.fromEntries(new FormData(form));
+  const person = editingStaff;
   try {
-    await api("update_staff", { user_id: editingStaff.auth_user_id, ...values });
-    if (editingStaff.auth_user_id === profile.auth_user_id) {
+    await api("update_staff", { user_id: person.auth_user_id, ...values });
+    if (person.auth_user_id === profile.auth_user_id) {
       profile.display_name = values.display_name.trim();
       document.querySelector("#identity").textContent = `${profile.display_name}｜${label("role", profile.role)}`;
     }
-    const renamed = values.username.trim().toLowerCase() !== editingStaff.username;
-    editingStaff = { ...editingStaff, username: values.username.trim().toLowerCase(), display_name: values.display_name.trim() };
-    document.querySelector("#staff-editor-title").textContent = `修改帳號：${editingStaff.username}`;
+    const username = values.username.trim().toLowerCase();
+    const renamed = username !== person.username;
+    // The editor may have closed or moved to another account while this saved.
+    if (editingStaff?.auth_user_id === person.auth_user_id) {
+      editingStaff = { ...person, username, display_name: values.display_name.trim() };
+      document.querySelector("#staff-editor-title").textContent = `修改帳號：${username}`;
+      // The server saved it lowercased; the field shows that, not the capitals a phone keyboard added,
+      // unless the name was edited again while this saved.
+      if (form.elements.username.value === values.username) form.elements.username.value = username;
+    }
     showMessage(renamed ? "帳號已更新，之後請用新帳號名稱登入。" : "帳號已更新。");
     await loadStaff();
   } catch (error) { showError(error); }
@@ -1874,7 +1884,7 @@ document.querySelector("#edit-staff-form").addEventListener("submit", async (eve
 document.querySelector("#staff-password-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
-  if (!editingStaff || !confirm(`確定設定 ${editingStaff.username} 的密碼？對方所有已登入的裝置都會登出。`)) return;
+  if (!editingStaff || !await Ui.confirm(`確定設定 ${editingStaff.username} 的密碼？對方所有已登入的裝置都會登出。`, "設定密碼")) return;
   try {
     const result = await api("set_staff_password", { user_id: editingStaff.auth_user_id, password: form.elements.password.value });
     form.reset();
@@ -1996,10 +2006,12 @@ document.querySelector("#edit-registration-form").addEventListener("submit", asy
   try { fields = registrationFields(registrationParts.detail); } catch (error) { return showError(error); }
   // Saving applies the audience rule to sign-ups from before an activity was restricted.
   const reverted = Meals.revertedCount(document.querySelector("#detail-choices"));
-  if (reverted && !confirm(`這筆登記有 ${reverted} 項限定活動不符報名對象，儲存後會改為不參加。確定儲存？`)) return;
+  const registrationId = selectedRegistration.id;
+  if (reverted && !await Ui.confirm(`這筆登記有 ${reverted} 項限定活動不符報名對象，儲存後會改為不參加。確定儲存？`, "儲存")) return;
+  // The dialog does not pause the page: a record that loaded meanwhile must not get this one's fields.
+  if (selectedRegistration?.id !== registrationId) return showMessage("開啟的登記已換成另一筆，未儲存。", true);
   savingRegistration = true;
   const controls = [...form.querySelectorAll("input, select, textarea, button")].map((control) => [control, control.disabled]);
-  const registrationId = selectedRegistration.id;
   const submit = form.querySelector('button[type="submit"]');
   controls.forEach(([control]) => control.disabled = true);
   submit.textContent = "儲存中…";
@@ -2087,12 +2099,14 @@ document.querySelector("#import-form").addEventListener("submit", async (event) 
 });
 document.querySelector("#void-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!confirm("確定作廢此登記？作廢後不計入統計與 CSV，且無法在頁面上恢復。")) return;
+  // Read before the dialog: currentTarget is null once the handler has awaited.
+  const reason = String(new FormData(event.currentTarget).get("reason")).trim();
+  const registrationId = selectedRegistration.id;
+  if (!await Ui.confirm("確定作廢此登記？作廢後不計入統計與 CSV，且無法在頁面上恢復。", "作廢")) return;
+  // The dialog does not pause the page: a record that loaded meanwhile is not the one confirmed.
+  if (selectedRegistration?.id !== registrationId) return showMessage("開啟的登記已換成另一筆，未作廢。", true);
   try {
-    await api("void_registration", {
-      registration_id: selectedRegistration.id,
-      reason: String(new FormData(event.currentTarget).get("reason")).trim(),
-    });
+    await api("void_registration", { registration_id: registrationId, reason });
     showMessage("登記已作廢。");
     try { await refreshRegistration(); }
     catch (error) { showError(error, "登記已作廢，但畫面未能重新整理："); }

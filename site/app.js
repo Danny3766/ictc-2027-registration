@@ -44,9 +44,9 @@ if (config?.environment === "test") Object.assign(document.querySelector("#test-
 // person on a shared device starts without the previous person's details.
 sessionStorage.removeItem("registration_success");
 
-function selectTab(tab) {
+async function selectTab(tab) {
   const current = tabs.find((item) => item.getAttribute("aria-selected") === "true");
-  if (tab !== current && hasUnsavedChanges() && !confirm("確定放棄尚未儲存的修改？")) return false;
+  if (tab !== current && hasUnsavedChanges() && !await Ui.confirm("確定放棄尚未儲存的修改？", "放棄修改")) return false;
   if (tab !== current && editMode) showConfirmation();
   if (tab !== current) clearValidation();
   for (const item of tabs) {
@@ -60,13 +60,13 @@ function selectTab(tab) {
 
 for (const tab of tabs) {
   tab.addEventListener("click", () => selectTab(tab));
-  tab.addEventListener("keydown", (event) => {
+  tab.addEventListener("keydown", async (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     const next = event.key === "Home" ? tabs[0]
       : event.key === "End" ? tabs.at(-1)
       : tabs[(tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
-    if (selectTab(next)) next.focus();
+    if (await selectTab(next)) next.focus();
   });
 }
 
@@ -77,7 +77,7 @@ function showMessage(text, error = false, position = "form", scroll = true) {
   target.textContent = text;
   target.classList.toggle("error", error);
   target.hidden = false;
-  if (scroll) target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  if (scroll) target.scrollIntoView({ behavior: Ui.scrollBehavior(), block: "center" });
 }
 
 function fieldName(control) {
@@ -87,13 +87,6 @@ function fieldName(control) {
     hosting_status: "是否可以開家接待", guest_count: "可以接待幾位", guest_type: "接待對象",
     pickup_status: "是否可以接機", pickup_count: "可以接機幾位",
   }[control.name] ?? control.name;
-}
-
-// Only the public page manages aria-invalid; staff forms use native validation.
-function initializeValidation(container) {
-  for (const control of container.querySelectorAll(':is(input, select, textarea):not([aria-invalid])')) {
-    control.setAttribute("aria-invalid", "false");
-  }
 }
 
 function clearValidation() {
@@ -116,11 +109,34 @@ function updateValidation(form, focus = false, scroll = true) {
     (control.type === "radio" ? control.closest(".activity, .hosting-options") : control.closest("label"))
       ?.classList.add("field-invalid");
   }
-  showMessage(`請補填以下欄位：${[...new Set(invalid.map(fieldName))].join("、")}`, true, "form", scroll);
-  if (focus) invalid[0].focus({ preventScroll: true });
+  // One link per field, keyed by name: two activities may share a title yet each needs its own link.
+  const firstByName = new Map();
+  for (const control of invalid) if (!firstByName.has(control.name)) firstByName.set(control.name, control);
+  showMessage("請補填以下欄位：", true, "form", scroll);
+  // Each name jumps to its field, so keyboard users need not Tab through the whole form to reach it.
+  message.append(...[...firstByName.values()].flatMap((control, index) => {
+    const link = document.createElement("a");
+    link.href = "#";
+    link.textContent = fieldName(control);
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      control.focus();
+    });
+    return index ? ["、", link] : [link];
+  }));
+  // Focus goes to the list that was just scrolled into view; the first missing field can be far down
+  // the page, where a focus that does not scroll would leave it off screen. Its first link takes the
+  // focus, not the message: the message is a live region, so focusing it would read the list twice.
+  if (focus) message.querySelector("a").focus({ preventScroll: true });
 }
 
+// Firefox and Safari report an empty required field as invalid before any submit; "false" holds until
+// a failed submit marks what is missing. Fields drawn later (activities, surveys) get it as they appear.
+const markUnchecked = (form) => form.querySelectorAll(":is(input, select, textarea):not([aria-invalid])")
+  .forEach((control) => control.setAttribute("aria-invalid", "false"));
 for (const form of [registrationForm, queryForm, editForm]) {
+  markUnchecked(form);
+  new MutationObserver(() => markUnchecked(form)).observe(form, { childList: true, subtree: true });
   let pending = false;
   form.addEventListener("invalid", (event) => {
     event.preventDefault();
@@ -177,8 +193,8 @@ function activityFields(activities, values = new Map(), showMap = true) {
     return `<div class="activity" data-activity="${activity.id}">
       ${activityDetails(activity, showMap)}
       <div class="activity-options">
-        <label><input aria-invalid="false" type="radio" name="activity_${activity.id}" value="true" ${selected === true ? "checked" : ""} required>參加</label>
-        <label><input aria-invalid="false" type="radio" name="activity_${activity.id}" value="false" ${selected === false ? "checked" : ""} required>不參加</label>
+        <label><input type="radio" name="activity_${activity.id}" value="true" ${selected === true ? "checked" : ""} required>參加</label>
+        <label><input type="radio" name="activity_${activity.id}" value="false" ${selected === false ? "checked" : ""} required>不參加</label>
       </div>
     </div>`;
   }).join("");
@@ -282,7 +298,6 @@ function syncRegistrationSurveys() {
     if (identity && container.dataset.wasAllowed === "true" && !allowed
       && container.dataset.identity !== identity) renderer.render(container, null);
     if (show && container.dataset[kind] === undefined) renderer.render(container);
-    initializeValidation(container);
     if (identity) Object.assign(container.dataset, { wasAllowed: String(allowed), identity });
     survey.hidden = !show;
     // A hidden required control must not block the other survey or the whole form.
@@ -468,7 +483,6 @@ function showHostingSummary() {
         container.append(hint);
       }
     }
-    initializeValidation(container);
     container.dataset.editable = String(editable);
     if (identity) Object.assign(container.dataset, { wasAllowed: String(allowed), identity });
   }
@@ -577,9 +591,10 @@ async function loadPage() {
       registrationForm.querySelector("button[type=submit]").disabled = true;
       showMessage(pastDeadline ? "登記已截止。" : "登記目前尚未開放。", true, "notice");
     }
+    // Last, so any failure above leaves the forms hidden behind the catch's notice.
+    document.querySelector("#registration-service").removeAttribute("data-loading");
   } catch (error) {
-    registrationForm.hidden = true;
-    queryForm.hidden = true;
+    // The forms stay hidden: without the page data there is nothing to fill in or look up.
     showMessage(error.message, true, "notice");
   }
 }
@@ -740,8 +755,8 @@ for (const form of [registrationForm, queryForm, editForm]) {
     if (validationForm === form) updateValidation(form, false, false);
   });
 }
-cancelEditButton.addEventListener("click", () => {
-  if (hasUnsavedChanges() && !confirm("確定放棄尚未儲存的修改？")) return;
+cancelEditButton.addEventListener("click", async () => {
+  if (hasUnsavedChanges() && !await Ui.confirm("確定放棄尚未儲存的修改？", "放棄修改")) return;
   showConfirmation();
   showMessage("以下為目前登記內容。", false, "result");
 });

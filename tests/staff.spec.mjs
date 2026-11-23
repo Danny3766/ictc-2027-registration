@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { statisticsFixture } from "./statistics-fixture.mjs";
+import { answerConfirm, confirmDialog } from "./confirm-dialog.mjs";
 
 async function settle(page) {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -588,7 +589,6 @@ test("admins set another account's password, but change their own with the curre
     list_staff: twoAccounts,
     set_staff_password: () => ({ json: { success: true } }),
   });
-  page.on("dialog", (dialog) => dialog.accept());
   await login(page, "帳號");
   const rows = page.locator("#staff-rows tr");
   await expect(rows).toHaveCount(2);
@@ -606,6 +606,7 @@ test("admins set another account's password, but change their own with the curre
   expect(sent).toHaveLength(0);
   await passwordForm.locator('input[name="password"]').fill("new-staff-password-1");
   await passwordForm.getByRole("button", { name: "設定密碼" }).click();
+  await answerConfirm(page);
   await expect(page.locator("#message")).toHaveText("密碼已設定。請以安全方式私下交付。");
   expect(sent).toEqual([{ action: "set_staff_password", user_id: other, password: "new-staff-password-1" }]);
   await expect(passwordForm.locator('input[name="password"]')).toHaveValue("");
@@ -621,7 +622,15 @@ test("admins create accounts with a password and no district, and rename them", 
   await login(page, "帳號");
   const create = page.locator("#create-staff-form");
   await expect(create.locator('select[name="district_id"]')).toHaveCount(0);
-  await create.locator('input[name="username"]').fill("newhelper");
+  // The format check really applies (an unescaped "-" once made browsers drop it); capitals pass, since
+  // the server lowercases, so a phone keyboard's automatic capital is not refused.
+  const username = create.locator('input[name="username"]');
+  await expect(username).toHaveAttribute("autocapitalize", "none");
+  for (const [value, valid] of [["1helper", false], ["new.helper", false], ["New-helper_2", true]]) {
+    await username.fill(value);
+    expect(await username.evaluate((input) => input.checkValidity())).toBe(valid);
+  }
+  await username.fill("newhelper");
   await create.locator('input[name="display_name"]').fill("新服事者");
   await create.locator('input[name="password"]').fill("new-staff-password-1");
   await create.getByRole("button", { name: "建立帳號" }).click();
@@ -632,11 +641,14 @@ test("admins create accounts with a password and no district, and rename them", 
   await page.locator("#staff-rows tr").nth(1).getByRole("button", { name: "修改" }).click();
   const edit = page.locator("#edit-staff-form");
   await expect(edit.locator('input[name="username"]')).toHaveValue("other");
-  await edit.locator('input[name="username"]').fill("renamed");
+  await edit.locator('input[name="username"]').fill("Renamed");
   await edit.locator('input[name="display_name"]').fill("改名後");
   await edit.getByRole("button", { name: "儲存帳號" }).click();
   await expect(page.locator("#message")).toHaveText("帳號已更新，之後請用新帳號名稱登入。");
-  expect(sent[1]).toEqual({ action: "update_staff", user_id: other, username: "renamed", display_name: "改名後" });
+  expect(sent[1]).toEqual({ action: "update_staff", user_id: other, username: "Renamed", display_name: "改名後" });
+  // The server lowercases it, and the field shows the name as saved.
+  await expect(edit.locator('input[name="username"]')).toHaveValue("renamed");
+  await expect(page.locator("#staff-editor-title")).toHaveText("修改帳號：renamed");
   await page.getByRole("button", { name: "關閉", exact: true }).click();
   await expect(page.locator("#staff-editor")).toBeHidden();
 });
@@ -760,16 +772,78 @@ test("voiding a registration requires a reason and sends it", async ({ page }) =
   await mockStaff(page, "staff", (payload) => { if (payload.action === "void_registration") voided = payload; }, "測試登記", {
     void_registration: () => ({ json: { success: true } }),
   });
-  page.on("dialog", (dialog) => dialog.accept());
   await login(page);
   await page.getByRole("button", { name: "查看／處理" }).click();
   const form = page.locator("#void-form");
   await form.getByRole("button", { name: "作廢此登記" }).click();
+  await expect(confirmDialog(page)).toHaveCount(0);
   expect(voided).toBeUndefined();
   await form.locator('input[name="reason"]').fill("  填錯了  ");
   await form.getByRole("button", { name: "作廢此登記" }).click();
+  // Cancel keeps the record; only the dialog's 作廢 sends it.
+  await answerConfirm(page, false);
+  expect(voided).toBeUndefined();
+  await form.getByRole("button", { name: "作廢此登記" }).click();
+  // Cancel takes the first focus, so an Enter right after the click does not void; the other button says 作廢.
+  await expect(confirmDialog(page).getByRole("button", { name: "取消" })).toBeFocused();
+  await expect(confirmDialog(page).locator('button[value="confirm"]')).toHaveText("作廢");
+  await answerConfirm(page);
   await expect(page.locator("#message")).toHaveText("登記已作廢。");
   expect(voided).toEqual({ action: "void_registration", registration_id: "223e4567-e89b-42d3-a456-426614174000", reason: "填錯了" });
+});
+
+test("a record that loads while the void confirmation is open is not voided in place of the one confirmed", async ({ page }) => {
+  const actions = [];
+  await mockStaff(page, "staff", (payload) => actions.push(payload.action), "測試登記", mealReplies());
+  await login(page);
+  const rows = page.locator("#registration-rows tr");
+  await rows.nth(0).getByRole("button", { name: "查看／處理" }).click();
+  const name = page.locator('#edit-registration-form input[name="full_name"]');
+  await expect(name).toHaveValue("甲");
+
+  // 乙's details are held back until 甲's void confirmation is open.
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route("**/functions/v1/staff", async (route) => {
+    if (route.request().postDataJSON().action === "get_registration") await held;
+    await route.fallback();
+  });
+  await rows.nth(1).getByRole("button", { name: "查看／處理" }).click();
+  await page.locator('#void-form input[name="reason"]').fill("填錯了");
+  await page.locator("#void-form").getByRole("button", { name: "作廢此登記" }).click();
+  await expect(confirmDialog(page)).toBeVisible();
+  release();
+  await expect(name).toHaveValue("乙");
+  await answerConfirm(page);
+  await expect(page.locator("#message")).toHaveText("開啟的登記已換成另一筆，未作廢。");
+  expect(actions).not.toContain("void_registration");
+});
+
+test("a login that expires while a confirmation is open closes it as 取消", async ({ page }) => {
+  const actions = [];
+  await mockStaff(page, "staff", (payload) => actions.push(payload.action), "測試登記", mealReplies());
+  await login(page);
+  const rows = page.locator("#registration-rows tr");
+  await rows.nth(0).getByRole("button", { name: "查看／處理" }).click();
+  await expect(page.locator('#edit-registration-form input[name="full_name"]')).toHaveValue("甲");
+
+  // The next detail load meets an expired login only after the void confirmation is open.
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route("**/functions/v1/staff", async (route) => {
+    if (route.request().postDataJSON().action !== "get_registration") return route.fallback();
+    await held;
+    await route.fulfill({ status: 401, json: { error: "登入已過期，請重新登入" } });
+  });
+  await rows.nth(1).getByRole("button", { name: "查看／處理" }).click();
+  await page.locator('#void-form input[name="reason"]').fill("填錯了");
+  await page.locator("#void-form").getByRole("button", { name: "作廢此登記" }).click();
+  await expect(confirmDialog(page)).toBeVisible();
+  release();
+  await expect(confirmDialog(page)).toHaveCount(0);
+  await expect(page.locator("#login-panel")).toBeVisible();
+  await expect(page.locator("#message")).toHaveText("登入已過期，請重新登入");
+  expect(actions).not.toContain("void_registration");
 });
 
 test("a message from before login is cleared once login succeeds", async ({ page }) => {
@@ -995,6 +1069,7 @@ test("activities can be reordered by dragging or arrow keys and saved together",
   await handles.nth(0).focus();
   await page.keyboard.press("ArrowDown");
   expect(await activityTitles(page)).toEqual(["活動乙", "活動甲", "活動丙"]);
+  // Screen readers hear the title and new place, not the details list in the same cell.
   await expect(page.locator("#activity-reorder-status")).toHaveText("活動甲，第 2 位");
 
   // Drag 活動丙 above the first row with pointer moves. Center the table first so the sticky
@@ -1013,6 +1088,8 @@ test("activities can be reordered by dragging or arrow keys and saved together",
   expect(saved.activity_ids).toEqual([3, 2, 1]);
   await expect(page.getByRole("button", { name: "調整排序" })).toBeVisible();
   await expect(numbers).toHaveText(["1", "2", "3"]);
+  // Emptied, so the same move in the next session is announced again.
+  await expect(page.locator("#activity-reorder-status")).toHaveText("");
 });
 
 test("cancelling a reorder restores the order without saving", async ({ page }) => {
@@ -1596,12 +1673,12 @@ test("CSV adds the hosting and meal columns", async ({ page }, testInfo) => {
 test("admins save the hosting switch and description from their own card", async ({ page }) => {
   let saved;
   await mockStaff(page, "admin", (payload) => { if (payload.action === "save_reference") saved = payload; });
-  page.on("dialog", (dialog) => dialog.accept());
   await login(page, "開家與接機接待");
   const form = page.locator("#hosting-settings-form");
   await form.getByLabel("開放開家接待調查").check();
   await form.locator('textarea[name="hosting_description"]').fill("接待期間 2/19～2/22");
   await form.getByRole("button", { name: "儲存接待設定" }).click();
+  await answerConfirm(page);
   await expect(page.locator("#message")).toHaveText("設定已儲存。");
   expect(saved).toEqual({ action: "save_reference", kind: "hosting", data: {
     is_hosting_open: true, hosting_description: "接待期間 2/19～2/22", is_pickup_open: false, pickup_description: "",
@@ -1721,12 +1798,12 @@ test("a password set for another admin must be changed at their next login", asy
     ] } }),
     set_staff_password: () => ({ json: { success: true, must_change_password: true } }),
   });
-  page.on("dialog", (dialog) => dialog.accept());
   await login(page, "帳號");
   await page.locator("#staff-rows tr").nth(1).getByRole("button", { name: "修改" }).click();
   const form = page.locator("#staff-password-form");
   await form.locator('input[name="password"]').fill("new-admin-password-1");
   await form.getByRole("button", { name: "設定密碼" }).click();
+  await answerConfirm(page);
   await expect(page.locator("#message")).toHaveText("密碼已設定。對方是管理員，下次登入時須改成自己的密碼；請以安全方式私下交付。");
 });
 
@@ -1889,14 +1966,11 @@ test("the activity form saves prices, cost and audience, and confirms restrictin
   await form.locator('input[name="audience_note"]').fill("限有開家接待的家庭");
 
   // 乙 signed up and has no hosting answer, so restricting the lunch leaves one sign-up outside it.
-  const asked = [];
-  page.once("dialog", (dialog) => { asked.push(dialog.message()); return dialog.dismiss(); });
   await form.getByRole("button", { name: /^儲存活動/ }).click();
-  await expect.poll(() => asked.length).toBe(1);
-  expect(asked[0]).toContain("目前有 1 位不符對象的人已報名此活動，他們的報名會保留。");
+  expect(await answerConfirm(page, false)).toContain("目前有 1 位不符對象的人已報名此活動，他們的報名會保留。");
   expect(saved).toHaveLength(0);
-  page.once("dialog", (dialog) => dialog.accept());
   await form.getByRole("button", { name: /^儲存活動/ }).click();
+  await answerConfirm(page);
   await expect(page.locator("#message")).toHaveText("設定已儲存。");
   expect(saved[0]).toMatchObject({ id: "1", fee_amount: "120", student_fee_amount: 70, cost_amount: "150",
     audience: "hosting", audience_note: "限有開家接待的家庭" });
@@ -1931,14 +2005,11 @@ test("staff saving a sign-up from before a restriction confirm that it becomes �
   await expect(page.locator("#detail-choices .meal-identity")).toBeHidden();
   await page.locator('#edit-registration-form input[name="full_name"]').fill("乙更正");
 
-  const asked = [];
-  page.once("dialog", (dialog) => { asked.push(dialog.message()); return dialog.dismiss(); });
   await page.getByRole("button", { name: "儲存登記" }).click();
-  await expect.poll(() => asked.length).toBe(1);
-  expect(asked[0]).toBe("這筆登記有 1 項限定活動不符報名對象，儲存後會改為不參加。確定儲存？");
+  expect(await answerConfirm(page, false)).toBe("這筆登記有 1 項限定活動不符報名對象，儲存後會改為不參加。確定儲存？");
   expect(saved).toBeUndefined();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "儲存登記" }).click();
+  await answerConfirm(page);
   await expect(page.locator("#message")).toHaveText("登記資料已儲存。");
   expect(saved.choices).toEqual([{ activity_id: 1, attending: false }, { activity_id: 2, attending: false }, { activity_id: 3, attending: false }]);
   expect(saved.meal_identity).toBe("general");
@@ -1948,8 +2019,6 @@ test("an unanswered restricted activity stays 未回覆 when staff save an older
   let saved;
   await mockStaff(page, "staff", (payload) => { if (payload.action === "save_registration") saved = payload; }, "測試登記",
     mealReplies([mealRegistration(3, "乙", { 2: false, 3: false }, null, "general")]));
-  const dialogs = [];
-  page.on("dialog", (dialog) => { dialogs.push(dialog.message()); return dialog.dismiss(); });
   await login(page);
   await page.getByRole("button", { name: "查看／處理" }).click();
   const lunch = page.locator('#detail-choices [data-activity="1"]');
@@ -1961,7 +2030,7 @@ test("an unanswered restricted activity stays 未回覆 when staff save an older
   await expect(page.locator("#message")).toHaveText("登記資料已儲存。");
   // Nothing about the lunch is sent, so the save changes no answer, and there was nothing to confirm.
   expect(saved.choices).toEqual([{ activity_id: 2, attending: false }, { activity_id: 3, attending: false }]);
-  expect(dialogs).toEqual([]);
+  await expect(confirmDialog(page)).toHaveCount(0);
 });
 
 test("協助登記 follows the audience and asks the identity for a student-priced meal", async ({ page }) => {
@@ -2194,6 +2263,8 @@ test("the 身分別 checklist filters by several identities and 未填身分, wi
   await expect(summary).toBeVisible();
   await expect(summary).toHaveText("全部身分");
   if (page.viewportSize().width > 700) {
+    // toHaveText passes while the search panel is still hidden, when boundingBox() would be null.
+    await expect(summary).toBeVisible();
     const [district, box] = await Promise.all([form.locator('select[name="district_id"]').boundingBox(), summary.boundingBox()]);
     expect(box.x).toBeGreaterThan(district.x + district.width);
     const middle = box.y + box.height / 2;
@@ -2579,8 +2650,8 @@ test("admins manage meal identities, and prices typed into the activity form sur
 
   // An unused identity can be deleted; 一般 can only be renamed.
   await go(page, "身分別");
-  page.once("dialog", (dialog) => dialog.accept());
   await page.locator("#identity-rows tr").filter({ hasText: "服事者" }).getByRole("button", { name: "刪除" }).click();
+  await answerConfirm(page);
   await expect(page.locator("#identity-rows")).not.toContainText("服事者");
   // 學生 is reserved too, yet stays selectable as the 學生統計身分.
   const student = page.locator("#identity-rows tr").filter({ hasText: "學生" });
@@ -3016,8 +3087,8 @@ for (const action of ["save_registration", "set_import_status", "void_registrati
       await page.locator('#import-form button[type="submit"]').click();
     } else {
       await page.locator('#void-form [name="reason"]').fill("test");
-      page.once("dialog", (dialog) => dialog.accept());
       await page.locator('#void-form button[type="submit"]').click();
+      await answerConfirm(page);
     }
     await expect.poll(() => pending.length).toBe(2);
     expect(pending[1].request().postDataJSON()).toMatchObject({ page: 0, search: "needle", summary: true });
@@ -3277,8 +3348,8 @@ for (const [action, success] of [
       await page.locator("#registration-rows button").first().click();
       if (action === "void_registration") {
         await page.locator('#void-form [name="reason"]').fill("test");
-        page.once("dialog", (dialog) => dialog.accept());
         await page.locator('#void-form button[type="submit"]').click();
+        await answerConfirm(page);
       } else {
         await page.locator('#import-form [name="status"]').selectOption("imported");
         await page.locator('#import-form button[type="submit"]').click();
@@ -3363,8 +3434,8 @@ for (const order of ["original-first", "takeover-first"]) {
     const pending = [];
     await holdListRequests(page, (route) => pending.push(route));
     await page.locator('#void-form [name="reason"]').fill("test");
-    page.once("dialog", (dialog) => dialog.accept());
     await page.locator('#void-form button[type="submit"]').click();
+    await answerConfirm(page);
     await expect.poll(() => pending.length).toBe(1);
     const refreshing = page.evaluate(() => loadRegistrations());
     await expect.poll(() => pending.length).toBe(2);
@@ -3575,8 +3646,8 @@ test("a void refresh replaced by new conditions still updates the record", async
   const pending = [];
   await holdListRequests(page, (route) => pending.push(route));
   await page.locator('#void-form [name="reason"]').fill("test");
-  page.once("dialog", (dialog) => dialog.accept());
   await page.locator('#void-form button[type="submit"]').click();
+  await answerConfirm(page);
   await expect.poll(() => pending.length).toBe(1);
   await page.evaluate(() => { showRegistrations(0, "other", "", [], ""); });
   await expect.poll(() => pending.length).toBe(2);
@@ -3686,8 +3757,8 @@ test("a late void refresh leaves a record opened and being edited since then alo
   const pending = [];
   await holdListRequests(page, (route) => pending.push(route));
   await page.locator('#void-form [name="reason"]').fill("test");
-  page.once("dialog", (dialog) => dialog.accept());
   await page.locator('#void-form button[type="submit"]').click();
+  await answerConfirm(page);
   await expect.poll(() => pending.length).toBe(1);
   await page.evaluate(() => { showRegistrations(0, "other", "", [], ""); });
   await expect.poll(() => pending.length).toBe(2);
@@ -3769,15 +3840,13 @@ test("an activity audience check started before logout asks nothing afterwards",
     await route.fallback();
   });
   await login(page, "活動");
-  const dialogs = [];
-  page.on("dialog", (dialog) => { dialogs.push(dialog.message()); return dialog.dismiss(); });
   const form = page.locator("#activity-form");
   await page.locator("#activity-rows").getByRole("button", { name: "編輯" }).first().click();
   await expect(form.locator('select[name="audience"]')).toHaveValue("all");
   await form.locator('select[name="audience"]').selectOption("hosting");
   // Without a logout the same save asks about the sign-up outside the new audience.
   await form.getByRole("button", { name: /^儲存活動/ }).click();
-  await expect.poll(() => dialogs.length).toBe(1);
+  expect(await answerConfirm(page, false)).toContain("不符對象");
   hold = true;
   await form.getByRole("button", { name: /^儲存活動/ }).click();
   await expect.poll(() => Boolean(held)).toBe(true);
@@ -3787,6 +3856,6 @@ test("an activity audience check started before logout asks nothing afterwards",
   await held.fallback();
   await response;
   await settle(page);
-  expect(dialogs).toHaveLength(1);
+  await expect(confirmDialog(page)).toHaveCount(0);
   await expect(page.locator("#message")).toHaveText("已登出。");
 });
