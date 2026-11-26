@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readRequestJson, isWeakPassword, nameKey, sameUser, validPassword, validUsername, validMealIdentity, validDistrictFilter, validImportStatusFilter, filterImportStatus, validChild, childrenByParent, attachRegistrationChildren } from "./index.ts";
+import { handler, readRequestJson, isWeakPassword, nameKey, sameUser, validPassword, validUsername, validMealIdentity, validDistrictFilter, validAudience, validImportStatusFilter, filterImportStatus, validChild, childrenByParent, attachRegistrationChildren } from "./index.ts";
 
 test("JSON bodies enforce the byte limit while reading", async () => {
   const payload = '"' + "a".repeat(63_998) + '"';
@@ -94,6 +94,13 @@ test("the registration list's district filter is left out, null, or a positive i
   for (const value of [0, -1, 1.5, "1", "", NaN, Infinity, 2 ** 53, true, {}, [1]]) assert.equal(validDistrictFilter(value), false);
 });
 
+test("an activity audience is all, hosting, pickup or activity:<id>, as the database allows", () => {
+  for (const value of ["all", "hosting", "pickup", "activity:1", "activity:120"]) assert.equal(validAudience(value), true);
+  for (const value of [undefined, null, "", "Hosting", "activity:", "activity:0", "activity:01", "activity:1 ", "pickup\n", 1, ["all"]]) {
+    assert.equal(validAudience(value), false);
+  }
+});
+
 test("the import status filter accepts 待處理 or one status, and 待處理 leaves out void rows", () => {
   for (const value of [undefined, "needs_action", "pending", "reimport_needed", "imported"]) assert.equal(validImportStatusFilter(value), true);
   for (const value of [null, "", "PENDING", "void", 1, ["pending"], {}]) assert.equal(validImportStatusFilter(value), false);
@@ -153,4 +160,20 @@ test("family enrichment gets names and links in one request and preserves a fail
   assert.equal(await attachRegistrationChildren({ rpc: async () => ({ data: null, error }) }, rows), error);
   assert.deepEqual(rows[0].children, [{ serial_no: 3, full_name: "child" }]);
   assert.equal(await attachRegistrationChildren({ rpc: () => assert.fail("no parents") }, []), null);
+});
+
+test("CORS preflight caches permissions for two hours without requiring authentication", async () => {
+  const reply = await handler(new Request("https://example.test", {
+    method: "OPTIONS",
+    headers: { Origin: "https://example.github.io", "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "apikey, authorization, content-type" },
+  }));
+  assert.equal(reply.status, 204);
+  assert.equal(reply.headers.get("Access-Control-Max-Age"), "7200");
+  assert.equal(reply.headers.get("Access-Control-Allow-Origin"), "*");
+  assert.match(reply.headers.get("Access-Control-Allow-Methods"), /POST/);
+  assert.match(reply.headers.get("Access-Control-Allow-Headers"), /apikey/);
+  assert.match(reply.headers.get("Access-Control-Allow-Headers"), /authorization/);
+  assert.match(reply.headers.get("Access-Control-Allow-Headers"), /content-type/);
+  assert.equal(await reply.text(), "");
 });
